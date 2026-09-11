@@ -4,13 +4,6 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Clase de control responsable de:
- *  - Requisito: Gestionar salas (registrar y listar)
- *  - Requisito: Consultar disponibilidad de una sala
- *
- * Responsable: Edison
- */
 public class GestorSalas {
 
     private List<Sala> salas;
@@ -49,8 +42,6 @@ public class GestorSalas {
 
     /**
      * Requisito funcional: Consultar disponibilidad de una sala.
-     * Verifica si la sala existe y si no tiene ninguna reserva confirmada
-     * que se traslape con el rango de fecha/hora solicitado.
      */
     public boolean consultarDisponibilidad(int numeroSala, LocalDate fecha, LocalTime horaInicio,
                                             LocalTime horaFin, List<Reserva> reservasExistentes) {
@@ -67,11 +58,26 @@ public class GestorSalas {
 
             if (mismaSala && mismaFecha && estaConfirmada) {
                 if (r.seTraslapaCon(horaInicio, horaFin)) {
-                    return false; // hay cruce de horario, la sala NO esta disponible
+                    return false;
                 }
             }
         }
-        return true; // ninguna reserva existente cruza con ese horario
+        return true;
+    }
+
+    /**
+     * Requisito funcional: Calcular duracion de una reserva.
+     * Busca la reserva por su id dentro de la lista recibida y usa
+     * el metodo calcularDuracionMinutos() que ya existe en Reserva.
+     */
+    public long calcularDuracionReserva(String idReserva, List<Reserva> reservas) {
+        for (Reserva r : reservas) {
+            if (r.getIdReserva().equals(idReserva)) {
+                return r.calcularDuracionMinutos();
+            }
+        }
+        System.out.println("No se encontro la reserva " + idReserva);
+        return -1;
     }
 
     private void cargarDesdeArchivo() {
