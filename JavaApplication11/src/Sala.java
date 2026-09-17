@@ -54,13 +54,17 @@ public class Sala {
     }
     
     
-    public static Sala FromCsv(String linea){
+    public static Sala fromCsv(String linea){
         String[] partes = linea.split(",");
         int numero = Integer.parseInt(partes[0].trim());
         String ubicacion = partes[1].trim();
         int capacidad = Integer.parseInt(partes[2].trim());
         String estado = partes[3].trim();
         return new Sala(numero, ubicacion, capacidad, estado);
+    }
+    
+    public String toCsv(){
+        return numero + " , " + ubicacion + " , " + capacidad + " , " + estado;
     }
     
     @Override
