@@ -53,11 +53,6 @@ public class Sala {
     public void setEstado(String estado) {
         this.estado = estado;
     }
-<<<<<<< HEAD
-    
-    
-    public static Sala fromCsv(String linea){
-=======
 
     /**
      * Convierte la sala a una linea de texto separada por comas,
@@ -71,7 +66,6 @@ public class Sala {
      * Crea una Sala a partir de una linea leida del fichero salas.txt
      */
     public static Sala fromCsv(String linea) {
->>>>>>> d1a1d3b8ab8231daf1891a3412354608da455c5b
         String[] partes = linea.split(",");
         int numero = Integer.parseInt(partes[0].trim());
         String ubicacion = partes[1].trim();
@@ -79,15 +73,7 @@ public class Sala {
         String estado = partes[3].trim();
         return new Sala(numero, ubicacion, capacidad, estado);
     }
-<<<<<<< HEAD
-    
-    public String toCsv(){
-        return numero + " , " + ubicacion + " , " + capacidad + " , " + estado;
-    }
-    
-=======
 
->>>>>>> d1a1d3b8ab8231daf1891a3412354608da455c5b
     @Override
     public String toString() {
         return "Sala " + numero + " (" + ubicacion + ") - capacidad: " + capacidad
