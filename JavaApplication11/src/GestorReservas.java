@@ -6,7 +6,7 @@ import java.util.List;
 
 public class GestorReservas {
 
-    public static final int HORAS_MAXIMAS_POR_RESERVA = 3; // ajustable segun politica de la biblioteca
+    public static final int HORAS_MAXIMAS_POR_RESERVA = 3; // se puede cambiar segun la politica de la biblioteca
 
     private List<Reserva> reservas;
     private String rutaArchivo;
