@@ -82,10 +82,12 @@ public class VentanaPrincipal extends JFrame {
         agregarFila(panel, c, 4, "Hora inicio (HH:mm):", txtHoraInicio);
         agregarFila(panel, c, 5, "Hora fin (HH:mm):", txtHoraFin);
 
+        // === BLOQUE COMMIT 3: inicio ===
         JLabel lblNota = new JLabel("Maximo permitido por reserva: " + GestorReservas.HORAS_MAXIMAS_POR_RESERVA + " horas.");
         lblNota.setFont(lblNota.getFont().deriveFont(Font.ITALIC, 11f));
         c.gridx = 0; c.gridy = 6; c.gridwidth = 2; c.insets = new Insets(2, 5, 10, 5);
         panel.add(lblNota, c);
+        // === BLOQUE COMMIT 3: fin ===
 
         JButton btnRegistrar = new JButton("Registrar reserva");
         btnRegistrar.addActionListener(e -> {
@@ -107,12 +109,15 @@ public class VentanaPrincipal extends JFrame {
                 }
 
                 int cantidadUsuarios = Integer.parseInt(cantTexto);
+
+                // === BLOQUE COMMIT 2: inicio ===
                 Sala salaSeleccionada = gestorSalas.buscarSalaPorNumero(numeroSala);
                 if (cantidadUsuarios < 1 || cantidadUsuarios > salaSeleccionada.getCapacidad()) {
                     mostrarError(lblResultado, "La sala " + numeroSala + " tiene capacidad para "
                             + salaSeleccionada.getCapacidad() + " personas.");
                     return;
                 }
+                // === BLOQUE COMMIT 2: fin ===
 
                 LocalDate fecha = LocalDate.parse(fechaTexto, FMT_FECHA);
                 LocalTime horaInicio = LocalTime.parse(horaInicioTexto, FMT_HORA);
@@ -126,7 +131,7 @@ public class VentanaPrincipal extends JFrame {
                     mostrarExito(lblResultado, "Reserva " + id + " registrada con exito.");
                     refrescarTablaReservas();
                 } else {
-                    mostrarError(lblResultado, "No se pudo registrar la reserva. Revisa la consola para el detalle.");
+                    mostrarError(lblResultado, "No se pudo registrar la reserva. Revisa el horario (cruce o maximo de horas).");
                 }
             } catch (DateTimeParseException ex) {
                 mostrarError(lblResultado, "Formato de fecha/hora invalido. Usa dd/MM/yyyy y HH:mm.");

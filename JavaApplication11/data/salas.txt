@@ -1,0 +1,12 @@
+1,Nivel 1 - Ala Norte,6,Disponible
+2,Nivel 1 - Ala Norte,6,Disponible
+3,Nivel 1 - Ala Sur,6,Disponible
+4,Nivel 1 - Ala Sur,6,Disponible
+5,Nivel 2 - Ala Norte,6,Disponible
+6,Nivel 2 - Ala Norte,6,Disponible
+7,Nivel 2 - Ala Sur,6,Disponible
+8,Nivel 2 - Ala Sur,6,Disponible
+9,Nivel 3 - Ala Norte,6,Disponible
+10,Nivel 3 - Ala Norte,6,Disponible
+11,Nivel 3 - Ala Sur,6,Disponible
+12,Nivel 3 - Ala Sur,6,Disponible
