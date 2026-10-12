@@ -5,7 +5,6 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.util.List;
 
 public class VentanaPrincipal extends JFrame {
 
@@ -14,6 +13,7 @@ public class VentanaPrincipal extends JFrame {
 
     private final GestorSalas gestorSalas;
     private final GestorReservas gestorReservas;
+    private DefaultTableModel modeloReservas;
 
     public VentanaPrincipal() {
         gestorSalas = new GestorSalas("data/salas.txt");
@@ -21,12 +21,13 @@ public class VentanaPrincipal extends JFrame {
 
         setTitle("PointNow - Reserva de Working Points");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(650, 500);
+        setSize(700, 520);
         setLocationRelativeTo(null);
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Salas", crearPanelSalas());
         tabs.addTab("Registrar reserva", crearPanelRegistrar());
+        tabs.addTab("Ver reservas", crearPanelVerReservas());
         tabs.addTab("Consultar disponibilidad", crearPanelConsultar());
         tabs.addTab("Cancelar reserva", crearPanelCancelar());
         tabs.addTab("Calcular duracion", crearPanelDuracion());
@@ -67,57 +68,106 @@ public class VentanaPrincipal extends JFrame {
         for (Sala s : gestorSalas.listarSalas()) {
             comboSala.addItem(s.getNumero());
         }
-        JTextField txtCarnet = new JTextField(15);
+        JTextField txtDpi = new JTextField(15);
+        JTextField txtCantUsuarios = new JTextField(5);
         JTextField txtFecha = new JTextField("dd/MM/yyyy");
         JTextField txtHoraInicio = new JTextField("HH:mm");
         JTextField txtHoraFin = new JTextField("HH:mm");
         JLabel lblResultado = new JLabel(" ");
-        lblResultado.setForeground(new Color(0, 110, 0));
 
-        agregarFila(panel, c, 0, "Sala:", comboSala);
-        agregarFila(panel, c, 1, "Carnet estudiante:", txtCarnet);
-        agregarFila(panel, c, 2, "Fecha (dd/MM/yyyy):", txtFecha);
-        agregarFila(panel, c, 3, "Hora inicio (HH:mm):", txtHoraInicio);
-        agregarFila(panel, c, 4, "Hora fin (HH:mm):", txtHoraFin);
+        agregarFila(panel, c, 0, "DPI o Carne:", txtDpi);
+        agregarFila(panel, c, 1, "Cantidad de usuarios:", txtCantUsuarios);
+        agregarFila(panel, c, 2, "Sala:", comboSala);
+        agregarFila(panel, c, 3, "Fecha (dd/MM/yyyy):", txtFecha);
+        agregarFila(panel, c, 4, "Hora inicio (HH:mm):", txtHoraInicio);
+        agregarFila(panel, c, 5, "Hora fin (HH:mm):", txtHoraFin);
+
+        JLabel lblNota = new JLabel("Maximo permitido por reserva: " + GestorReservas.HORAS_MAXIMAS_POR_RESERVA + " horas.");
+        lblNota.setFont(lblNota.getFont().deriveFont(Font.ITALIC, 11f));
+        c.gridx = 0; c.gridy = 6; c.gridwidth = 2; c.insets = new Insets(2, 5, 10, 5);
+        panel.add(lblNota, c);
 
         JButton btnRegistrar = new JButton("Registrar reserva");
         btnRegistrar.addActionListener(e -> {
             try {
                 int numeroSala = (int) comboSala.getSelectedItem();
-                String carnet = txtCarnet.getText().trim();
-                LocalDate fecha = LocalDate.parse(txtFecha.getText().trim(), FMT_FECHA);
-                LocalTime horaInicio = LocalTime.parse(txtHoraInicio.getText().trim(), FMT_HORA);
-                LocalTime horaFin = LocalTime.parse(txtHoraFin.getText().trim(), FMT_HORA);
+                String dpi = txtDpi.getText().trim();
+                String fechaTexto = txtFecha.getText().trim();
+                String horaInicioTexto = txtHoraInicio.getText().trim();
+                String horaFinTexto = txtHoraFin.getText().trim();
+                String cantTexto = txtCantUsuarios.getText().trim();
 
-                if (carnet.isEmpty()) {
-                    lblResultado.setForeground(Color.RED);
-                    lblResultado.setText("Debes ingresar el carnet del estudiante.");
+                if (dpi.isEmpty()) {
+                    mostrarError(lblResultado, "Debes ingresar el DPI o carne.");
+                    return;
+                }
+                if (cantTexto.isEmpty() || !cantTexto.matches("\\d+")) {
+                    mostrarError(lblResultado, "La cantidad de usuarios debe ser un numero entero.");
                     return;
                 }
 
+                int cantidadUsuarios = Integer.parseInt(cantTexto);
+                Sala salaSeleccionada = gestorSalas.buscarSalaPorNumero(numeroSala);
+                if (cantidadUsuarios < 1 || cantidadUsuarios > salaSeleccionada.getCapacidad()) {
+                    mostrarError(lblResultado, "La sala " + numeroSala + " tiene capacidad para "
+                            + salaSeleccionada.getCapacidad() + " personas.");
+                    return;
+                }
+
+                LocalDate fecha = LocalDate.parse(fechaTexto, FMT_FECHA);
+                LocalTime horaInicio = LocalTime.parse(horaInicioTexto, FMT_HORA);
+                LocalTime horaFin = LocalTime.parse(horaFinTexto, FMT_HORA);
+
                 String id = "R" + System.currentTimeMillis() % 100000;
-                Reserva nueva = new Reserva(id, numeroSala, carnet, fecha, horaInicio, horaFin, "Confirmada");
+                Reserva nueva = new Reserva(id, numeroSala, dpi, cantidadUsuarios, fecha, horaInicio, horaFin, "Confirmada");
                 boolean exito = gestorReservas.registrarReserva(nueva);
 
                 if (exito) {
-                    lblResultado.setForeground(new Color(0, 110, 0));
-                    lblResultado.setText("Reserva " + id + " registrada con exito.");
+                    mostrarExito(lblResultado, "Reserva " + id + " registrada con exito.");
+                    refrescarTablaReservas();
                 } else {
-                    lblResultado.setForeground(Color.RED);
-                    lblResultado.setText("No se pudo registrar: la sala ya esta reservada en ese horario.");
+                    mostrarError(lblResultado, "No se pudo registrar la reserva. Revisa la consola para el detalle.");
                 }
             } catch (DateTimeParseException ex) {
-                lblResultado.setForeground(Color.RED);
-                lblResultado.setText("Formato de fecha/hora invalido. Usa dd/MM/yyyy y HH:mm.");
+                mostrarError(lblResultado, "Formato de fecha/hora invalido. Usa dd/MM/yyyy y HH:mm.");
             }
         });
 
-        c.gridx = 0; c.gridy = 5; c.gridwidth = 2; c.insets = new Insets(15, 5, 5, 5);
+        c.gridx = 0; c.gridy = 7; c.gridwidth = 2; c.insets = new Insets(10, 5, 5, 5);
         panel.add(btnRegistrar, c);
-        c.gridy = 6;
+        c.gridy = 8;
         panel.add(lblResultado, c);
 
         return panel;
+    }
+
+    private JPanel crearPanelVerReservas() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        String[] columnas = {"ID", "Sala", "DPI/Carne", "Usuarios", "Fecha", "Inicio", "Fin", "Duracion (min)", "Estado"};
+        modeloReservas = new DefaultTableModel(columnas, 0);
+        JTable tabla = new JTable(modeloReservas);
+        panel.add(new JScrollPane(tabla), BorderLayout.CENTER);
+
+        JButton btnRefrescar = new JButton("Refrescar listado");
+        btnRefrescar.addActionListener(e -> refrescarTablaReservas());
+        panel.add(btnRefrescar, BorderLayout.SOUTH);
+
+        refrescarTablaReservas();
+        return panel;
+    }
+
+    private void refrescarTablaReservas() {
+        if (modeloReservas == null) return;
+        modeloReservas.setRowCount(0);
+        for (Reserva r : gestorReservas.getReservas()) {
+            modeloReservas.addRow(new Object[]{
+                    r.getIdReserva(), r.getNumeroSala(), r.getDpiCarnet(), r.getCantidadUsuarios(),
+                    r.getFecha().format(FMT_FECHA), r.getHoraInicio().format(FMT_HORA),
+                    r.getHoraFin().format(FMT_HORA), r.calcularDuracionMinutos(), r.getEstado()
+            });
+        }
     }
 
     private JPanel crearPanelConsultar() {
@@ -151,15 +201,12 @@ public class VentanaPrincipal extends JFrame {
                         numeroSala, fecha, horaInicio, horaFin, gestorReservas.getReservas());
 
                 if (disponible) {
-                    lblResultado.setForeground(new Color(0, 110, 0));
-                    lblResultado.setText("La sala " + numeroSala + " SI esta disponible en ese horario.");
+                    mostrarExito(lblResultado, "La sala " + numeroSala + " SI esta disponible en ese horario.");
                 } else {
-                    lblResultado.setForeground(Color.RED);
-                    lblResultado.setText("La sala " + numeroSala + " NO esta disponible en ese horario.");
+                    mostrarError(lblResultado, "La sala " + numeroSala + " NO esta disponible en ese horario.");
                 }
             } catch (DateTimeParseException ex) {
-                lblResultado.setForeground(Color.RED);
-                lblResultado.setText("Formato de fecha/hora invalido. Usa dd/MM/yyyy y HH:mm.");
+                mostrarError(lblResultado, "Formato de fecha/hora invalido. Usa dd/MM/yyyy y HH:mm.");
             }
         });
 
@@ -186,11 +233,10 @@ public class VentanaPrincipal extends JFrame {
             String id = txtId.getText().trim();
             boolean exito = gestorReservas.cancelarReserva(id);
             if (exito) {
-                lblResultado.setForeground(new Color(0, 110, 0));
-                lblResultado.setText("Reserva " + id + " cancelada con exito.");
+                mostrarExito(lblResultado, "Reserva " + id + " cancelada con exito.");
+                refrescarTablaReservas();
             } else {
-                lblResultado.setForeground(Color.RED);
-                lblResultado.setText("No se encontro la reserva o ya estaba cancelada.");
+                mostrarError(lblResultado, "No se encontro la reserva o ya estaba cancelada.");
             }
         });
 
@@ -217,11 +263,9 @@ public class VentanaPrincipal extends JFrame {
             String id = txtId.getText().trim();
             long minutos = gestorSalas.calcularDuracionReserva(id, gestorReservas.getReservas());
             if (minutos >= 0) {
-                lblResultado.setForeground(new Color(0, 110, 0));
-                lblResultado.setText("La reserva " + id + " dura " + minutos + " minutos.");
+                mostrarExito(lblResultado, "La reserva " + id + " dura " + minutos + " minutos.");
             } else {
-                lblResultado.setForeground(Color.RED);
-                lblResultado.setText("No se encontro la reserva " + id + ".");
+                mostrarError(lblResultado, "No se encontro la reserva " + id + ".");
             }
         });
 
@@ -231,6 +275,16 @@ public class VentanaPrincipal extends JFrame {
         panel.add(lblResultado, c);
 
         return panel;
+    }
+
+    private void mostrarExito(JLabel lbl, String texto) {
+        lbl.setForeground(new Color(0, 110, 0));
+        lbl.setText(texto);
+    }
+
+    private void mostrarError(JLabel lbl, String texto) {
+        lbl.setForeground(Color.RED);
+        lbl.setText(texto);
     }
 
     private GridBagConstraints baseConstraints() {

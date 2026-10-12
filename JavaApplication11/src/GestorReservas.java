@@ -6,6 +6,8 @@ import java.util.List;
 
 public class GestorReservas {
 
+    public static final int HORAS_MAXIMAS_POR_RESERVA = 3; // ajustable segun politica de la biblioteca
+
     private List<Reserva> reservas;
     private String rutaArchivo;
 
@@ -19,9 +21,6 @@ public class GestorReservas {
         return reservas;
     }
 
-    /**
-     * Requisito funcional: Validar cruce de horario.
-     */
     public boolean validarCruceHorario(int numeroSala, LocalDate fecha, LocalTime horaInicio, LocalTime horaFin) {
         for (Reserva r : reservas) {
             boolean mismaSala = r.getNumeroSala() == numeroSala;
@@ -36,10 +35,20 @@ public class GestorReservas {
         return false;
     }
 
-    /**
-     * Requisito funcional: Registrar reserva.
-     */
     public boolean registrarReserva(Reserva nuevaReserva) {
+        long duracionMin = nuevaReserva.calcularDuracionMinutos();
+
+        if (duracionMin <= 0) {
+            System.out.println("La hora de fin debe ser posterior a la hora de inicio.");
+            return false;
+        }
+
+        if (duracionMin > HORAS_MAXIMAS_POR_RESERVA * 60) {
+            System.out.println("No se pudo registrar: la reserva supera el maximo de "
+                    + HORAS_MAXIMAS_POR_RESERVA + " horas permitidas.");
+            return false;
+        }
+
         boolean hayCruce = validarCruceHorario(
                 nuevaReserva.getNumeroSala(),
                 nuevaReserva.getFecha(),
@@ -59,11 +68,6 @@ public class GestorReservas {
         return true;
     }
 
-    /**
-     * Requisito funcional: Cancelar una reserva.
-     * Busca la reserva por su id; si existe y esta Confirmada, la marca
-     * como Cancelada y actualiza el archivo.
-     */
     public boolean cancelarReserva(String idReserva) {
         for (Reserva r : reservas) {
             if (r.getIdReserva().equals(idReserva) && r.getEstado().equalsIgnoreCase("Confirmada")) {
