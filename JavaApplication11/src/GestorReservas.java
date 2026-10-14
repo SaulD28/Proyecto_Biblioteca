@@ -6,7 +6,7 @@ import java.util.List;
 
 public class GestorReservas {
 
-    public static final int HORAS_MAXIMAS_POR_RESERVA = 3; // se puede cambiar segun la politica de la biblioteca
+    public static final int HORAS_MAXIMAS_POR_RESERVA = 3; 
 
     private List<Reserva> reservas;
     private String rutaArchivo;
@@ -35,6 +35,23 @@ public class GestorReservas {
         return false;
     }
 
+
+    public boolean usuarioTieneCruce(String dpiCarnet, LocalDate fecha, LocalTime horaInicio, LocalTime horaFin) {
+        for (Reserva r : reservas) {
+            boolean mismoUsuario = r.getDpiCarnet().equals(dpiCarnet);
+            boolean mismaFecha = r.getFecha().equals(fecha);
+            boolean estaConfirmada = r.getEstado().equalsIgnoreCase("Confirmada");
+
+            if (mismoUsuario && mismaFecha && estaConfirmada && r.seTraslapaCon(horaInicio, horaFin)) {
+                System.out.println("El usuario " + dpiCarnet + " ya tiene la reserva "
+                        + r.getIdReserva() + " en ese horario.");
+                return true;
+            }
+        }
+        return false;
+    }
+
+
     public boolean registrarReserva(Reserva nuevaReserva) {
         long duracionMin = nuevaReserva.calcularDuracionMinutos();
 
@@ -59,6 +76,13 @@ public class GestorReservas {
         if (hayCruce) {
             System.out.println("No se pudo registrar la reserva " + nuevaReserva.getIdReserva()
                     + ": la sala ya esta reservada en ese horario.");
+            return false;
+        }
+
+        if (usuarioTieneCruce(nuevaReserva.getDpiCarnet(), nuevaReserva.getFecha(),
+                nuevaReserva.getHoraInicio(), nuevaReserva.getHoraFin())) {
+            System.out.println("No se pudo registrar la reserva " + nuevaReserva.getIdReserva()
+                    + ": el usuario ya tiene otra reserva en ese horario.");
             return false;
         }
 
