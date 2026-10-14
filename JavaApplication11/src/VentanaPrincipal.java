@@ -14,6 +14,7 @@ public class VentanaPrincipal extends JFrame {
     private final GestorSalas gestorSalas;
     private final GestorReservas gestorReservas;
     private DefaultTableModel modeloReservas;
+        private JTextField txtFiltroDpi;
 
     public VentanaPrincipal() {
         gestorSalas = new GestorSalas("data/salas.txt");
@@ -146,14 +147,31 @@ public class VentanaPrincipal extends JFrame {
         return panel;
     }
 
-    private JPanel crearPanelVerReservas() {
+        private JPanel crearPanelVerReservas() {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        // Barra de filtro por DPI o carne
+        JPanel barraFiltro = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        txtFiltroDpi = new JTextField(15);
+        JButton btnFiltrar = new JButton("Filtrar");
+        JButton btnVerTodas = new JButton("Ver todas");
+        barraFiltro.add(new JLabel("Filtrar por DPI o carne:"));
+        barraFiltro.add(txtFiltroDpi);
+        barraFiltro.add(btnFiltrar);
+        barraFiltro.add(btnVerTodas);
+        panel.add(barraFiltro, BorderLayout.NORTH);
 
         String[] columnas = {"ID", "Sala", "DPI/Carne", "Usuarios", "Fecha", "Inicio", "Fin", "Duracion (min)", "Estado"};
         modeloReservas = new DefaultTableModel(columnas, 0);
         JTable tabla = new JTable(modeloReservas);
         panel.add(new JScrollPane(tabla), BorderLayout.CENTER);
+
+        btnFiltrar.addActionListener(e -> refrescarTablaReservas());
+        btnVerTodas.addActionListener(e -> {
+            txtFiltroDpi.setText("");
+            refrescarTablaReservas();
+        });
 
         JButton btnRefrescar = new JButton("Refrescar listado");
         btnRefrescar.addActionListener(e -> refrescarTablaReservas());
@@ -163,10 +181,14 @@ public class VentanaPrincipal extends JFrame {
         return panel;
     }
 
-    private void refrescarTablaReservas() {
+        private void refrescarTablaReservas() {
         if (modeloReservas == null) return;
+        String filtro = (txtFiltroDpi == null) ? "" : txtFiltroDpi.getText().trim();
         modeloReservas.setRowCount(0);
         for (Reserva r : gestorReservas.getReservas()) {
+            if (!filtro.isEmpty() && !r.getDpiCarnet().contains(filtro)) {
+                continue;
+            }
             modeloReservas.addRow(new Object[]{
                     r.getIdReserva(), r.getNumeroSala(), r.getDpiCarnet(), r.getCantidadUsuarios(),
                     r.getFecha().format(FMT_FECHA), r.getHoraInicio().format(FMT_HORA),
