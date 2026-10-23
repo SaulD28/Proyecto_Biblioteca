@@ -1,10 +1,17 @@
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
 import java.awt.*;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.regex.Pattern;
 
 public class VentanaPrincipal extends JFrame {
 
@@ -13,320 +20,598 @@ public class VentanaPrincipal extends JFrame {
 
     private final GestorSalas gestorSalas;
     private final GestorReservas gestorReservas;
+
     private DefaultTableModel modeloReservas;
-        private JTextField txtFiltroDpi;
+    private final DefaultListModel<Reserva> listaCancelar = new DefaultListModel<>();
+    private final DefaultListModel<Reserva> listaDuracion = new DefaultListModel<>();
+
+    private final CardLayout cartas = new CardLayout();
+    private final JPanel contenido = new JPanel(cartas);
+    private final List<JButton> botonesMenu = new ArrayList<>();
 
     public VentanaPrincipal() {
+        Tema.instalar();
         gestorSalas = new GestorSalas("data/salas.txt");
         gestorReservas = new GestorReservas("data/reservas.txt");
 
         setTitle("PointNow - Reserva de Working Points");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(700, 520);
+        setSize(1060, 660);
+        setMinimumSize(new Dimension(900, 580));
         setLocationRelativeTo(null);
 
-        JTabbedPane tabs = new JTabbedPane();
-        tabs.addTab("Salas", crearPanelSalas());
-        tabs.addTab("Registrar reserva", crearPanelRegistrar());
-        tabs.addTab("Ver reservas", crearPanelVerReservas());
-        tabs.addTab("Consultar disponibilidad", crearPanelConsultar());
-        tabs.addTab("Cancelar reserva", crearPanelCancelar());
-        tabs.addTab("Calcular duracion", crearPanelDuracion());
+        JPanel raiz = new JPanel(new BorderLayout());
+        raiz.setBackground(Tema.FONDO);
+        raiz.add(crearMenuLateral(), BorderLayout.WEST);
 
-        add(tabs);
+        contenido.setBackground(Tema.FONDO);
+        contenido.add(crearPanelSalas(), "salas");
+        contenido.add(crearPanelRegistrar(), "registrar");
+        contenido.add(crearPanelVerReservas(), "reservas");
+        contenido.add(crearPanelCancelar(), "cancelar");
+        contenido.add(crearPanelDuracion(), "duracion");
+        raiz.add(contenido, BorderLayout.CENTER);
+
+        setContentPane(raiz);
+        refrescarReservas();
+        mostrar("salas", 0);
     }
 
-    private JPanel crearPanelSalas() {
-        JPanel panel = new JPanel(new BorderLayout(10, 10));
-        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+    // ------------------------------------------------------------ Navegacion
 
+    private JPanel crearMenuLateral() {
+        JPanel menu = new JPanel();
+        menu.setLayout(new BoxLayout(menu, BoxLayout.Y_AXIS));
+        menu.setBackground(Tema.LATERAL);
+        menu.setBorder(Tema.margen(24, 14, 24, 14));
+        menu.setPreferredSize(new Dimension(230, 0));
+
+        JLabel logo = new JLabel("PointNow");
+        logo.setFont(Tema.TITULO.deriveFont(26f));
+        logo.setForeground(Color.WHITE);
+        logo.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel sub = new JLabel("Working Points de la biblioteca");
+        sub.setFont(Tema.FUENTE_PEQUENA);
+        sub.setForeground(new Color(0x9AA6BF));
+        sub.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JPanel cab = new JPanel(new GridLayout(2, 1, 0, 2));
+        cab.setOpaque(false);
+        cab.setBorder(Tema.margen(0, 8, 24, 0));
+        cab.add(logo);
+        cab.add(sub);
+        cab.setAlignmentX(Component.LEFT_ALIGNMENT);
+        cab.setMaximumSize(new Dimension(Integer.MAX_VALUE, 70));
+        menu.add(cab);
+
+        String[][] items = {
+                {"Salas", "salas"},
+                {"Nueva reserva", "registrar"},
+                {"Reservas", "reservas"},
+                {"Cancelar reserva", "cancelar"},
+                {"Duracion de reserva", "duracion"}
+        };
+        for (int i = 0; i < items.length; i++) {
+            final int indice = i;
+            final String clave = items[i][1];
+            JButton b = new JButton(items[i][0]);
+            b.setFont(Tema.FUENTE);
+            b.setForeground(new Color(0xD5DBEA));
+            b.setHorizontalAlignment(SwingConstants.LEFT);
+            b.setFocusPainted(false);
+            b.setBorderPainted(false);
+            b.setContentAreaFilled(false);
+            b.setOpaque(true);
+            b.setBackground(Tema.LATERAL);
+            b.setBorder(Tema.margen(12, 16, 12, 16));
+            b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            b.setAlignmentX(Component.LEFT_ALIGNMENT);
+            b.setMaximumSize(new Dimension(Integer.MAX_VALUE, 46));
+            b.addActionListener(e -> mostrar(clave, indice));
+            botonesMenu.add(b);
+            menu.add(b);
+            menu.add(Box.createVerticalStrut(4));
+        }
+        menu.add(Box.createVerticalGlue());
+        return menu;
+    }
+
+    private void mostrar(String clave, int indice) {
+        cartas.show(contenido, clave);
+        for (int i = 0; i < botonesMenu.size(); i++) {
+            JButton b = botonesMenu.get(i);
+            boolean activo = i == indice;
+            b.setBackground(activo ? Tema.PRIMARIO : Tema.LATERAL);
+            b.setForeground(activo ? Color.WHITE : new Color(0xD5DBEA));
+            b.setFont(activo ? Tema.FUENTE_NEGRITA : Tema.FUENTE);
+        }
+        if (!clave.equals("registrar")) {
+            refrescarReservas();
+        }
+    }
+
+    /** Estructura comun de cada pantalla: titulo, descripcion y cuerpo. */
+    private JPanel pagina(String titulo, String descripcion, JComponent cuerpo) {
+        JPanel p = new JPanel(new BorderLayout(0, 18));
+        p.setBackground(Tema.FONDO);
+        p.setBorder(Tema.margen(26, 30, 26, 30));
+
+        JLabel t = new JLabel(titulo);
+        t.setFont(Tema.TITULO);
+        t.setForeground(Tema.TEXTO);
+        JLabel d = new JLabel(descripcion);
+        d.setFont(Tema.FUENTE);
+        d.setForeground(Tema.TEXTO_SUAVE);
+        JPanel cab = new JPanel(new GridLayout(2, 1, 0, 4));
+        cab.setOpaque(false);
+        cab.add(t);
+        cab.add(d);
+
+        p.add(cab, BorderLayout.NORTH);
+        p.add(cuerpo, BorderLayout.CENTER);
+        return p;
+    }
+
+    // ----------------------------------------------------------------- Salas
+
+    private JPanel crearPanelSalas() {
         String[] columnas = {"Numero", "Ubicacion", "Capacidad", "Estado"};
-        DefaultTableModel modelo = new DefaultTableModel(columnas, 0);
+        DefaultTableModel modelo = new DefaultTableModel(columnas, 0) {
+            @Override
+            public boolean isCellEditable(int r, int c) {
+                return false;
+            }
+        };
         for (Sala s : gestorSalas.listarSalas()) {
             modelo.addRow(new Object[]{s.getNumero(), s.getUbicacion(), s.getCapacidad(), s.getEstado()});
         }
         JTable tabla = new JTable(modelo);
-        panel.add(new JScrollPane(tabla), BorderLayout.CENTER);
+        Tema.estilizarTabla(tabla);
+        if (modelo.getRowCount() > 0) {
+            tabla.setRowSelectionInterval(0, 0);
+        }
 
-        JButton btnRefrescar = new JButton("Refrescar listado");
-        btnRefrescar.addActionListener(e -> {
-            modelo.setRowCount(0);
-            for (Sala s : gestorSalas.listarSalas()) {
-                modelo.addRow(new Object[]{s.getNumero(), s.getUbicacion(), s.getCapacidad(), s.getEstado()});
+        // --- Consulta de disponibilidad (usa la sala seleccionada en la tabla)
+        JLabel lblSala = new JLabel();
+        lblSala.setFont(Tema.SUBTITULO);
+        lblSala.setForeground(Tema.PRIMARIO);
+
+        JSpinner spFecha = crearSpinnerFecha();
+        JSpinner spInicio = crearSpinnerHora(9, 0);
+        JSpinner spFin = crearSpinnerHora(10, 0);
+        JLabel lblResultado = new JLabel(" ");
+        lblResultado.setFont(Tema.FUENTE_NEGRITA);
+
+        Runnable actualizarTitulo = () -> {
+            int fila = tabla.getSelectedRow();
+            lblSala.setText(fila < 0 ? "Selecciona una sala en la tabla"
+                    : "Disponibilidad de la sala " + modelo.getValueAt(fila, 0));
+            lblResultado.setText(" ");
+        };
+        tabla.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                actualizarTitulo.run();
             }
         });
-        panel.add(btnRefrescar, BorderLayout.SOUTH);
+        actualizarTitulo.run();
 
-        return panel;
+        JButton btnConsultar = Tema.botonPrimario("Consultar disponibilidad");
+        btnConsultar.addActionListener(e -> {
+            int fila = tabla.getSelectedRow();
+            if (fila < 0) {
+                mostrarError(lblResultado, "Selecciona una sala de la tabla.");
+                return;
+            }
+            int numeroSala = (int) modelo.getValueAt(fila, 0);
+            LocalDate fecha = leerFecha(spFecha);
+            LocalTime inicio = leerHora(spInicio);
+            LocalTime fin = leerHora(spFin);
+            if (!fin.isAfter(inicio)) {
+                mostrarError(lblResultado, "La hora de fin debe ser posterior a la de inicio.");
+                return;
+            }
+            boolean libre = gestorSalas.consultarDisponibilidad(
+                    numeroSala, fecha, inicio, fin, gestorReservas.getReservas());
+            if (libre) {
+                mostrarExito(lblResultado, "La sala " + numeroSala + " esta DISPONIBLE en ese horario.");
+            } else {
+                mostrarError(lblResultado, "La sala " + numeroSala + " esta OCUPADA en ese horario.");
+            }
+        });
+
+        JPanel filaCampos = new JPanel(new GridBagLayout());
+        filaCampos.setOpaque(false);
+        GridBagConstraints c = new GridBagConstraints();
+        c.insets = new Insets(0, 0, 0, 14);
+        c.anchor = GridBagConstraints.SOUTHWEST;
+        agregarCampoVertical(filaCampos, c, 0, "Fecha", spFecha);
+        agregarCampoVertical(filaCampos, c, 1, "Hora inicio", spInicio);
+        agregarCampoVertical(filaCampos, c, 2, "Hora fin", spFin);
+        c.gridx = 3; c.gridy = 1; c.weightx = 0;
+        filaCampos.add(btnConsultar, c);
+        c.gridx = 4; c.weightx = 1; c.fill = GridBagConstraints.HORIZONTAL;
+        filaCampos.add(lblResultado, c);
+
+        JPanel consulta = Tema.tarjeta(new BorderLayout(0, 12));
+        consulta.add(lblSala, BorderLayout.NORTH);
+        consulta.add(filaCampos, BorderLayout.CENTER);
+
+        JPanel cuerpo = new JPanel(new BorderLayout(0, 16));
+        cuerpo.setOpaque(false);
+        cuerpo.add(Tema.scroll(tabla), BorderLayout.CENTER);
+        cuerpo.add(consulta, BorderLayout.SOUTH);
+
+        return pagina("Salas", "Selecciona una sala y consulta si esta libre en la fecha y horario que necesitas.", cuerpo);
     }
+
+    private void agregarCampoVertical(JPanel panel, GridBagConstraints c, int col, String texto, JComponent campo) {
+        c.gridx = col; c.gridy = 0; c.weightx = 0; c.fill = GridBagConstraints.NONE;
+        JLabel l = new JLabel(texto);
+        l.setFont(Tema.FUENTE_PEQUENA);
+        l.setForeground(Tema.TEXTO_SUAVE);
+        panel.add(l, c);
+        c.gridy = 1;
+        panel.add(campo, c);
+    }
+
+    // ------------------------------------------------------- Nueva reserva
 
     private JPanel crearPanelRegistrar() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-        GridBagConstraints c = baseConstraints();
-
-        JComboBox<Integer> comboSala = new JComboBox<>();
+        JComboBox<Sala> comboSala = new JComboBox<>();
         for (Sala s : gestorSalas.listarSalas()) {
-            comboSala.addItem(s.getNumero());
+            comboSala.addItem(s);
         }
-        JTextField txtDpi = new JTextField(15);
-        JTextField txtCantUsuarios = new JTextField(5);
-        JTextField txtFecha = new JTextField("dd/MM/yyyy");
-        JTextField txtHoraInicio = new JTextField("HH:mm");
-        JTextField txtHoraFin = new JTextField("HH:mm");
+        comboSala.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> l, Object v, int i, boolean sel, boolean foco) {
+                super.getListCellRendererComponent(l, v, i, sel, foco);
+                if (v instanceof Sala) {
+                    Sala s = (Sala) v;
+                    setText("Sala " + s.getNumero() + "  -  " + s.getUbicacion() + "  (hasta " + s.getCapacidad() + " personas)");
+                }
+                setBorder(Tema.margen(5, 10, 5, 10));
+                return this;
+            }
+        });
+        Tema.estilizarCombo(comboSala);
+
+        JTextField txtDpi = new JTextField(18);
+        Tema.estilizarCampo(txtDpi);
+        JTextField txtCantidad = new JTextField(6);
+        Tema.estilizarCampo(txtCantidad);
+        JSpinner spFecha = crearSpinnerFecha();
+        JSpinner spInicio = crearSpinnerHora(9, 0);
+        JSpinner spFin = crearSpinnerHora(10, 0);
         JLabel lblResultado = new JLabel(" ");
+        lblResultado.setFont(Tema.FUENTE_NEGRITA);
 
-        agregarFila(panel, c, 0, "DPI o Carne:", txtDpi);
-        agregarFila(panel, c, 1, "Cantidad de usuarios:", txtCantUsuarios);
-        agregarFila(panel, c, 2, "Sala:", comboSala);
-        agregarFila(panel, c, 3, "Fecha (dd/MM/yyyy):", txtFecha);
-        agregarFila(panel, c, 4, "Hora inicio (HH:mm):", txtHoraInicio);
-        agregarFila(panel, c, 5, "Hora fin (HH:mm):", txtHoraFin);
-
-        // === BLOQUE COMMIT 3: inicio ===
-        JLabel lblNota = new JLabel("Maximo permitido por reserva: " + GestorReservas.HORAS_MAXIMAS_POR_RESERVA + " horas.");
-        lblNota.setFont(lblNota.getFont().deriveFont(Font.ITALIC, 11f));
-        c.gridx = 0; c.gridy = 6; c.gridwidth = 2; c.insets = new Insets(2, 5, 10, 5);
-        panel.add(lblNota, c);
-        // === BLOQUE COMMIT 3: fin ===
-
-        JButton btnRegistrar = new JButton("Registrar reserva");
-        btnRegistrar.addActionListener(e -> {
-            try {
-                int numeroSala = (int) comboSala.getSelectedItem();
-                String dpi = txtDpi.getText().trim();
-                String fechaTexto = txtFecha.getText().trim();
-                String horaInicioTexto = txtHoraInicio.getText().trim();
-                String horaFinTexto = txtHoraFin.getText().trim();
-                String cantTexto = txtCantUsuarios.getText().trim();
-
-                if (dpi.isEmpty()) {
-                    mostrarError(lblResultado, "Debes ingresar el DPI o carne.");
-                    return;
-                }
-                if (cantTexto.isEmpty() || !cantTexto.matches("\\d+")) {
-                    mostrarError(lblResultado, "La cantidad de usuarios debe ser un numero entero.");
-                    return;
-                }
-
-                int cantidadUsuarios = Integer.parseInt(cantTexto);
-
-                // === BLOQUE COMMIT 2: inicio ===
-                Sala salaSeleccionada = gestorSalas.buscarSalaPorNumero(numeroSala);
-                if (cantidadUsuarios < 1 || cantidadUsuarios > salaSeleccionada.getCapacidad()) {
-                    mostrarError(lblResultado, "La sala " + numeroSala + " tiene capacidad para "
-                            + salaSeleccionada.getCapacidad() + " personas.");
-                    return;
-                }
-                // === BLOQUE COMMIT 2: fin ===
-
-                LocalDate fecha = LocalDate.parse(fechaTexto, FMT_FECHA);
-                LocalTime horaInicio = LocalTime.parse(horaInicioTexto, FMT_HORA);
-                LocalTime horaFin = LocalTime.parse(horaFinTexto, FMT_HORA);
-
-                String id = "R" + System.currentTimeMillis() % 100000;
-                Reserva nueva = new Reserva(id, numeroSala, dpi, cantidadUsuarios, fecha, horaInicio, horaFin, "Confirmada");
-                boolean exito = gestorReservas.registrarReserva(nueva);
-
-                if (exito) {
-                    mostrarExito(lblResultado, "Reserva " + id + " registrada con exito.");
-                    refrescarTablaReservas();
-                } else {
-                    mostrarError(lblResultado, "No se pudo registrar la reserva. Revisa el horario (cruce o maximo de horas).");
-                }
-            } catch (DateTimeParseException ex) {
-                mostrarError(lblResultado, "Formato de fecha/hora invalido. Usa dd/MM/yyyy y HH:mm.");
-            }
-        });
-
-        c.gridx = 0; c.gridy = 7; c.gridwidth = 2; c.insets = new Insets(10, 5, 5, 5);
-        panel.add(btnRegistrar, c);
-        c.gridy = 8;
-        panel.add(lblResultado, c);
-
-        return panel;
-    }
-
-        private JPanel crearPanelVerReservas() {
-        JPanel panel = new JPanel(new BorderLayout(10, 10));
-        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-
-        // Barra de filtro por DPI o carne
-        JPanel barraFiltro = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        txtFiltroDpi = new JTextField(15);
-        JButton btnFiltrar = new JButton("Filtrar");
-        JButton btnVerTodas = new JButton("Ver todas");
-        barraFiltro.add(new JLabel("Filtrar por DPI o carne:"));
-        barraFiltro.add(txtFiltroDpi);
-        barraFiltro.add(btnFiltrar);
-        barraFiltro.add(btnVerTodas);
-        panel.add(barraFiltro, BorderLayout.NORTH);
-
-        String[] columnas = {"ID", "Sala", "DPI/Carne", "Usuarios", "Fecha", "Inicio", "Fin", "Duracion (min)", "Estado"};
-        modeloReservas = new DefaultTableModel(columnas, 0);
-        JTable tabla = new JTable(modeloReservas);
-        panel.add(new JScrollPane(tabla), BorderLayout.CENTER);
-
-        btnFiltrar.addActionListener(e -> refrescarTablaReservas());
-        btnVerTodas.addActionListener(e -> {
-            txtFiltroDpi.setText("");
-            refrescarTablaReservas();
-        });
-
-        JButton btnRefrescar = new JButton("Refrescar listado");
-        btnRefrescar.addActionListener(e -> refrescarTablaReservas());
-        panel.add(btnRefrescar, BorderLayout.SOUTH);
-
-        refrescarTablaReservas();
-        return panel;
-    }
-
-        private void refrescarTablaReservas() {
-        if (modeloReservas == null) return;
-        String filtro = (txtFiltroDpi == null) ? "" : txtFiltroDpi.getText().trim();
-        modeloReservas.setRowCount(0);
-        for (Reserva r : gestorReservas.getReservas()) {
-            if (!filtro.isEmpty() && !r.getDpiCarnet().contains(filtro)) {
-                continue;
-            }
-            modeloReservas.addRow(new Object[]{
-                    r.getIdReserva(), r.getNumeroSala(), r.getDpiCarnet(), r.getCantidadUsuarios(),
-                    r.getFecha().format(FMT_FECHA), r.getHoraInicio().format(FMT_HORA),
-                    r.getHoraFin().format(FMT_HORA), r.calcularDuracionMinutos(), r.getEstado()
-            });
-        }
-    }
-
-    private JPanel crearPanelConsultar() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-        GridBagConstraints c = baseConstraints();
-
-        JComboBox<Integer> comboSala = new JComboBox<>();
-        for (Sala s : gestorSalas.listarSalas()) {
-            comboSala.addItem(s.getNumero());
-        }
-        JTextField txtFecha = new JTextField("dd/MM/yyyy");
-        JTextField txtHoraInicio = new JTextField("HH:mm");
-        JTextField txtHoraFin = new JTextField("HH:mm");
-        JLabel lblResultado = new JLabel(" ");
-
-        agregarFila(panel, c, 0, "Sala:", comboSala);
-        agregarFila(panel, c, 1, "Fecha (dd/MM/yyyy):", txtFecha);
-        agregarFila(panel, c, 2, "Hora inicio (HH:mm):", txtHoraInicio);
-        agregarFila(panel, c, 3, "Hora fin (HH:mm):", txtHoraFin);
-
-        JButton btnConsultar = new JButton("Consultar disponibilidad");
-        btnConsultar.addActionListener(e -> {
-            try {
-                int numeroSala = (int) comboSala.getSelectedItem();
-                LocalDate fecha = LocalDate.parse(txtFecha.getText().trim(), FMT_FECHA);
-                LocalTime horaInicio = LocalTime.parse(txtHoraInicio.getText().trim(), FMT_HORA);
-                LocalTime horaFin = LocalTime.parse(txtHoraFin.getText().trim(), FMT_HORA);
-
-                boolean disponible = gestorSalas.consultarDisponibilidad(
-                        numeroSala, fecha, horaInicio, horaFin, gestorReservas.getReservas());
-
-                if (disponible) {
-                    mostrarExito(lblResultado, "La sala " + numeroSala + " SI esta disponible en ese horario.");
-                } else {
-                    mostrarError(lblResultado, "La sala " + numeroSala + " NO esta disponible en ese horario.");
-                }
-            } catch (DateTimeParseException ex) {
-                mostrarError(lblResultado, "Formato de fecha/hora invalido. Usa dd/MM/yyyy y HH:mm.");
-            }
-        });
-
-        c.gridx = 0; c.gridy = 4; c.gridwidth = 2; c.insets = new Insets(15, 5, 5, 5);
-        panel.add(btnConsultar, c);
-        c.gridy = 5;
-        panel.add(lblResultado, c);
-
-        return panel;
-    }
-
-    private JPanel crearPanelCancelar() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-        GridBagConstraints c = baseConstraints();
-
-        JTextField txtId = new JTextField(15);
-        JLabel lblResultado = new JLabel(" ");
-
-        agregarFila(panel, c, 0, "ID de la reserva:", txtId);
-
-        JButton btnCancelar = new JButton("Cancelar reserva");
-        btnCancelar.addActionListener(e -> {
-            String id = txtId.getText().trim();
-            boolean exito = gestorReservas.cancelarReserva(id);
-            if (exito) {
-                mostrarExito(lblResultado, "Reserva " + id + " cancelada con exito.");
-                refrescarTablaReservas();
-            } else {
-                mostrarError(lblResultado, "No se encontro la reserva o ya estaba cancelada.");
-            }
-        });
-
-        c.gridx = 0; c.gridy = 1; c.gridwidth = 2; c.insets = new Insets(15, 5, 5, 5);
-        panel.add(btnCancelar, c);
-        c.gridy = 2;
-        panel.add(lblResultado, c);
-
-        return panel;
-    }
-
-    private JPanel crearPanelDuracion() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-        GridBagConstraints c = baseConstraints();
-
-        JTextField txtId = new JTextField(15);
-        JLabel lblResultado = new JLabel(" ");
-
-        agregarFila(panel, c, 0, "ID de la reserva:", txtId);
-
-        JButton btnCalcular = new JButton("Calcular duracion");
-        btnCalcular.addActionListener(e -> {
-            String id = txtId.getText().trim();
-            long minutos = gestorSalas.calcularDuracionReserva(id, gestorReservas.getReservas());
-            if (minutos >= 0) {
-                mostrarExito(lblResultado, "La reserva " + id + " dura " + minutos + " minutos.");
-            } else {
-                mostrarError(lblResultado, "No se encontro la reserva " + id + ".");
-            }
-        });
-
-        c.gridx = 0; c.gridy = 1; c.gridwidth = 2; c.insets = new Insets(15, 5, 5, 5);
-        panel.add(btnCalcular, c);
-        c.gridy = 2;
-        panel.add(lblResultado, c);
-
-        return panel;
-    }
-
-    private void mostrarExito(JLabel lbl, String texto) {
-        lbl.setForeground(new Color(0, 110, 0));
-        lbl.setText(texto);
-    }
-
-    private void mostrarError(JLabel lbl, String texto) {
-        lbl.setForeground(Color.RED);
-        lbl.setText(texto);
-    }
-
-    private GridBagConstraints baseConstraints() {
+        JPanel form = Tema.tarjeta(new GridBagLayout());
         GridBagConstraints c = new GridBagConstraints();
-        c.insets = new Insets(6, 5, 6, 5);
+        c.insets = new Insets(8, 6, 8, 6);
         c.anchor = GridBagConstraints.WEST;
         c.fill = GridBagConstraints.HORIZONTAL;
-        return c;
+
+        agregarFila(form, c, 0, "DPI o carne", txtDpi);
+        agregarFila(form, c, 1, "Cantidad de usuarios", txtCantidad);
+        agregarFila(form, c, 2, "Sala", comboSala);
+        agregarFila(form, c, 3, "Fecha", spFecha);
+        agregarFila(form, c, 4, "Hora de inicio", spInicio);
+        agregarFila(form, c, 5, "Hora de fin", spFin);
+
+        JLabel nota = new JLabel("Maximo permitido por reserva: " + GestorReservas.HORAS_MAXIMAS_POR_RESERVA + " horas.");
+        nota.setFont(Tema.FUENTE_PEQUENA);
+        nota.setForeground(Tema.TEXTO_SUAVE);
+        c.gridx = 1; c.gridy = 6; c.weightx = 1;
+        form.add(nota, c);
+
+        JButton btnRegistrar = Tema.botonPrimario("Registrar reserva");
+        btnRegistrar.addActionListener(e -> {
+            Sala sala = (Sala) comboSala.getSelectedItem();
+            String dpi = txtDpi.getText().trim();
+            String cantTexto = txtCantidad.getText().trim();
+
+            if (dpi.isEmpty()) {
+                mostrarError(lblResultado, "Debes ingresar el DPI o carne.");
+                return;
+            }
+            if (!dpi.matches("[A-Za-z0-9]{6,13}")) {
+                mostrarError(lblResultado, "El DPI o carne debe tener de 6 a 13 caracteres (solo letras y numeros).");
+                return;
+            }
+            if (!cantTexto.matches("\\d+")) {
+                mostrarError(lblResultado, "La cantidad de usuarios debe ser un numero entero.");
+                return;
+            }
+            int cantidad = Integer.parseInt(cantTexto);
+            if (sala == null) {
+                mostrarError(lblResultado, "No hay salas registradas.");
+                return;
+            }
+            if (cantidad < 1 || cantidad > sala.getCapacidad()) {
+                mostrarError(lblResultado, "La sala " + sala.getNumero() + " tiene capacidad para "
+                        + sala.getCapacidad() + " personas.");
+                return;
+            }
+
+            LocalDate fecha = leerFecha(spFecha);
+            LocalTime inicio = leerHora(spInicio);
+            LocalTime fin = leerHora(spFin);
+
+            String id = siguienteId();
+            Reserva nueva = new Reserva(id, sala.getNumero(), dpi, cantidad, fecha, inicio, fin, "Confirmada");
+            if (gestorReservas.registrarReserva(nueva)) {
+                mostrarExito(lblResultado, "Reserva registrada con exito (sala " + sala.getNumero() + ", "
+                        + fecha.format(FMT_FECHA) + ", " + inicio.format(FMT_HORA) + " a " + fin.format(FMT_HORA) + ").");
+                txtDpi.setText("");
+                txtCantidad.setText("");
+                refrescarReservas();
+            } else {
+                mostrarError(lblResultado, "No se pudo registrar. Revisa el horario (cruce o maximo de horas).");
+            }
+        });
+
+        JPanel pie = new JPanel(new BorderLayout(16, 0));
+        pie.setOpaque(false);
+        pie.add(btnRegistrar, BorderLayout.WEST);
+        pie.add(lblResultado, BorderLayout.CENTER);
+
+        pie.setBorder(Tema.margen(0, 2, 0, 0));
+        JPanel cuerpo = new JPanel(new BorderLayout(0, 16));
+        cuerpo.setOpaque(false);
+        cuerpo.add(form, BorderLayout.NORTH);
+        cuerpo.add(pie, BorderLayout.SOUTH);
+        JPanel envoltura = new JPanel(new BorderLayout());
+        envoltura.setOpaque(false);
+        envoltura.add(cuerpo, BorderLayout.NORTH);
+
+        return pagina("Nueva reserva", "Completa los datos para reservar un Working Point.", envoltura);
+    }
+
+    /** Genera el siguiente id consecutivo (R001, R002, ...) sin que el usuario lo escriba. */
+    private String siguienteId() {
+        int max = 0;
+        for (Reserva r : gestorReservas.getReservas()) {
+            String digitos = r.getIdReserva().replaceAll("\\D", "");
+            if (!digitos.isEmpty()) {
+                try {
+                    max = Math.max(max, Integer.parseInt(digitos));
+                } catch (NumberFormatException ignorada) {
+                    // id demasiado largo, se ignora
+                }
+            }
+        }
+        return String.format("R%03d", max + 1);
+    }
+
+    // -------------------------------------------------------------- Reservas
+
+    private JPanel crearPanelVerReservas() {
+        String[] columnas = {"Sala", "DPI / Carne", "Usuarios", "Fecha", "Inicio", "Fin", "Duracion (min)", "Estado"};
+        modeloReservas = new DefaultTableModel(columnas, 0) {
+            @Override
+            public boolean isCellEditable(int r, int c) {
+                return false;
+            }
+        };
+        JTable tabla = new JTable(modeloReservas);
+        Tema.estilizarTabla(tabla);
+        int[] anchos = {62, 150, 100, 125, 65, 65, 130, 110};
+        for (int i = 0; i < anchos.length; i++) {
+            tabla.getColumnModel().getColumn(i).setPreferredWidth(anchos[i]);
+        }
+
+        // Filtro por DPI o carne (columna 1)
+        TableRowSorter<DefaultTableModel> orden = new TableRowSorter<>(modeloReservas);
+        tabla.setRowSorter(orden);
+        JTextField txtFiltro = new JTextField(20);
+        Tema.estilizarCampo(txtFiltro);
+        txtFiltro.getDocument().addDocumentListener(new DocumentListener() {
+            private void filtrar() {
+                String t = txtFiltro.getText().trim();
+                orden.setRowFilter(t.isEmpty() ? null
+                        : RowFilter.regexFilter("(?i)" + Pattern.quote(t), 1));
+            }
+
+            @Override
+            public void insertUpdate(DocumentEvent e) { filtrar(); }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) { filtrar(); }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) { filtrar(); }
+        });
+
+        JPanel barra = new JPanel(new BorderLayout(12, 0));
+        barra.setOpaque(false);
+        barra.add(Tema.etiqueta("Filtrar por DPI o carne:"), BorderLayout.WEST);
+        barra.add(txtFiltro, BorderLayout.CENTER);
+
+        JPanel cuerpo = new JPanel(new BorderLayout(0, 14));
+        cuerpo.setOpaque(false);
+        cuerpo.add(barra, BorderLayout.NORTH);
+        cuerpo.add(Tema.scroll(tabla), BorderLayout.CENTER);
+
+        return pagina("Reservas", "Todas las reservas registradas, confirmadas y canceladas.", cuerpo);
+    }
+
+    // -------------------------------------------------------------- Cancelar
+
+    private JPanel crearPanelCancelar() {
+        JList<Reserva> lista = crearListaReservas(listaCancelar);
+        JLabel lblResultado = new JLabel(" ");
+        lblResultado.setFont(Tema.FUENTE_NEGRITA);
+
+        JButton btnCancelar = Tema.botonPeligro("Cancelar reserva seleccionada");
+        btnCancelar.addActionListener(e -> {
+            Reserva r = lista.getSelectedValue();
+            if (r == null) {
+                mostrarError(lblResultado, "Selecciona una reserva de la lista.");
+                return;
+            }
+            int op = JOptionPane.showConfirmDialog(this,
+                    "Cancelar la reserva de la sala " + r.getNumeroSala() + " del "
+                            + r.getFecha().format(FMT_FECHA) + " (" + r.getHoraInicio().format(FMT_HORA)
+                            + " a " + r.getHoraFin().format(FMT_HORA) + ")?",
+                    "Confirmar cancelacion", JOptionPane.YES_NO_OPTION);
+            if (op != JOptionPane.YES_OPTION) {
+                return;
+            }
+            if (gestorReservas.cancelarReserva(r.getIdReserva())) {
+                mostrarExito(lblResultado, "Reserva cancelada con exito.");
+                refrescarReservas();
+            } else {
+                mostrarError(lblResultado, "No se pudo cancelar la reserva.");
+            }
+        });
+
+        return pagina("Cancelar reserva", "Elige de la lista la reserva que quieres cancelar.",
+                crearCuerpoLista(lista, btnCancelar, lblResultado));
+    }
+
+    // -------------------------------------------------------------- Duracion
+
+    private JPanel crearPanelDuracion() {
+        JList<Reserva> lista = crearListaReservas(listaDuracion);
+        JLabel lblResultado = new JLabel(" ");
+        lblResultado.setFont(Tema.FUENTE_NEGRITA);
+
+        JButton btnCalcular = Tema.botonPrimario("Calcular duracion");
+        btnCalcular.addActionListener(e -> {
+            Reserva r = lista.getSelectedValue();
+            if (r == null) {
+                mostrarError(lblResultado, "Selecciona una reserva de la lista.");
+                return;
+            }
+            long minutos = gestorSalas.calcularDuracionReserva(r.getIdReserva(), gestorReservas.getReservas());
+            if (minutos >= 0) {
+                mostrarExito(lblResultado, "La reserva dura " + minutos + " minutos ("
+                        + minutos / 60 + " h " + minutos % 60 + " min).");
+            } else {
+                mostrarError(lblResultado, "No se encontro la reserva.");
+            }
+        });
+
+        return pagina("Duracion de reserva", "Elige una reserva de la lista para calcular cuanto dura.",
+                crearCuerpoLista(lista, btnCalcular, lblResultado));
+    }
+
+    private JPanel crearCuerpoLista(JList<Reserva> lista, JButton boton, JLabel resultado) {
+        JPanel pie = new JPanel(new BorderLayout(16, 0));
+        pie.setOpaque(false);
+        pie.add(boton, BorderLayout.WEST);
+        pie.add(resultado, BorderLayout.CENTER);
+
+        JPanel cuerpo = new JPanel(new BorderLayout(0, 16));
+        cuerpo.setOpaque(false);
+        cuerpo.add(Tema.scroll(lista), BorderLayout.CENTER);
+        cuerpo.add(pie, BorderLayout.SOUTH);
+        return cuerpo;
+    }
+
+    /** Lista de una sola columna: cada reserva es una fila de dos lineas. */
+    private JList<Reserva> crearListaReservas(DefaultListModel<Reserva> modelo) {
+        JList<Reserva> lista = new JList<>(modelo);
+        lista.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        lista.setFixedCellHeight(68);
+        lista.setCellRenderer(new ListCellRenderer<Reserva>() {
+            @Override
+            public Component getListCellRendererComponent(JList<? extends Reserva> l, Reserva r, int i,
+                                                           boolean sel, boolean foco) {
+                JPanel fila = new JPanel(new BorderLayout(0, 3));
+                fila.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(0xEEF0F5)),
+                        Tema.margen(10, 16, 10, 16)));
+                fila.setBackground(sel ? Tema.SELECCION : Color.WHITE);
+
+                JLabel l1 = new JLabel("Sala " + r.getNumeroSala() + "   -   " + r.getFecha().format(FMT_FECHA)
+                        + "   " + r.getHoraInicio().format(FMT_HORA) + " a " + r.getHoraFin().format(FMT_HORA));
+                l1.setFont(Tema.FUENTE_NEGRITA);
+                l1.setForeground(Tema.TEXTO);
+
+                JLabel l2 = new JLabel(r.getDpiCarnet() + "   -   " + r.getCantidadUsuarios() + " usuarios   -   "
+                        + r.getEstado());
+                l2.setFont(Tema.FUENTE_PEQUENA);
+                l2.setForeground(r.getEstado().equalsIgnoreCase("Cancelada") ? Tema.PELIGRO : Tema.TEXTO_SUAVE);
+
+                fila.add(l1, BorderLayout.NORTH);
+                fila.add(l2, BorderLayout.CENTER);
+                return fila;
+            }
+        });
+        return lista;
+    }
+
+    // ------------------------------------------------------------- Utilidades
+
+    private void refrescarReservas() {
+        if (modeloReservas != null) {
+            modeloReservas.setRowCount(0);
+            for (Reserva r : gestorReservas.getReservas()) {
+                modeloReservas.addRow(new Object[]{
+                        r.getNumeroSala(), r.getDpiCarnet(), r.getCantidadUsuarios(),
+                        r.getFecha().format(FMT_FECHA), r.getHoraInicio().format(FMT_HORA),
+                        r.getHoraFin().format(FMT_HORA), r.calcularDuracionMinutos(), r.getEstado()
+                });
+            }
+        }
+        listaCancelar.clear();
+        listaDuracion.clear();
+        for (Reserva r : gestorReservas.getReservas()) {
+            if (r.getEstado().equalsIgnoreCase("Confirmada")) {
+                listaCancelar.addElement(r);
+            }
+            listaDuracion.addElement(r);
+        }
+    }
+
+    private JSpinner crearSpinnerFecha() {
+        JSpinner sp = new JSpinner(new SpinnerDateModel(new Date(), null, null, java.util.Calendar.DAY_OF_MONTH));
+        sp.setEditor(new JSpinner.DateEditor(sp, "dd/MM/yyyy"));
+        Tema.estilizarSpinner(sp);
+        sp.setPreferredSize(new Dimension(150, 38));
+        return sp;
+    }
+
+    private JSpinner crearSpinnerHora(int hora, int minuto) {
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        cal.set(java.util.Calendar.HOUR_OF_DAY, hora);
+        cal.set(java.util.Calendar.MINUTE, minuto);
+        cal.set(java.util.Calendar.SECOND, 0);
+        JSpinner sp = new JSpinner(new SpinnerDateModel(cal.getTime(), null, null, java.util.Calendar.MINUTE));
+        sp.setEditor(new JSpinner.DateEditor(sp, "HH:mm"));
+        Tema.estilizarSpinner(sp);
+        sp.setPreferredSize(new Dimension(110, 38));
+        return sp;
+    }
+
+    private LocalDate leerFecha(JSpinner sp) {
+        return ((Date) sp.getValue()).toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+    }
+
+    private LocalTime leerHora(JSpinner sp) {
+        return ((Date) sp.getValue()).toInstant().atZone(ZoneId.systemDefault()).toLocalTime()
+                .withSecond(0).withNano(0);
     }
 
     private void agregarFila(JPanel panel, GridBagConstraints c, int fila, String etiqueta, JComponent campo) {
         c.gridx = 0; c.gridy = fila; c.gridwidth = 1; c.weightx = 0;
-        panel.add(new JLabel(etiqueta), c);
+        JLabel l = Tema.etiqueta(etiqueta);
+        l.setPreferredSize(new Dimension(180, 24));
+        panel.add(l, c);
         c.gridx = 1; c.weightx = 1;
+        c.fill = (campo instanceof JSpinner) ? GridBagConstraints.NONE : GridBagConstraints.HORIZONTAL;
         panel.add(campo, c);
+        c.fill = GridBagConstraints.HORIZONTAL;
+    }
+
+    private void mostrarExito(JLabel lbl, String texto) {
+        lbl.setForeground(Tema.EXITO);
+        lbl.setText(texto);
+    }
+
+    private void mostrarError(JLabel lbl, String texto) {
+        lbl.setForeground(Tema.PELIGRO);
+        lbl.setText(texto);
     }
 
     public static void main(String[] args) {
