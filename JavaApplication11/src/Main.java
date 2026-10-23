@@ -54,6 +54,16 @@ public class Main {
                 System.out.println("Error al crear reservas.txt: " + e.getMessage());
             }
         }
+        File archivoEstudiantes = new File("data/estudiantes.txt");
+        if (!archivoEstudiantes.exists()) {
+            try (FileWriter fw = new FileWriter(archivoEstudiantes)) {
+                fw.write("1234567890101,Ana Lopez,ana.lopez@correo.com\n");
+                fw.write("9876543210101,Carlos Perez,carlos.perez@correo.com\n");
+                System.out.println("Archivo estudiantes.txt creado con datos de prueba.");
+            } catch (IOException e) {
+                System.out.println("Error al crear estudiantes.txt: " + e.getMessage());
+            }
+        }
     }
 
     /**

@@ -20,6 +20,7 @@ public class VentanaPrincipal extends JFrame {
 
     private final GestorSalas gestorSalas;
     private final GestorReservas gestorReservas;
+   private final GestorEstudiantes gestorEstudiantes;
 
     private DefaultTableModel modeloReservas;
     private final DefaultListModel<Reserva> listaCancelar = new DefaultListModel<>();
@@ -33,6 +34,7 @@ public class VentanaPrincipal extends JFrame {
         Tema.instalar();
         gestorSalas = new GestorSalas("data/salas.txt");
         gestorReservas = new GestorReservas("data/reservas.txt");
+        gestorEstudiantes = new GestorEstudiantes("data/estudiantes.txt");
 
         setTitle("PointNow - Reserva de Working Points");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -46,6 +48,7 @@ public class VentanaPrincipal extends JFrame {
 
         contenido.setBackground(Tema.FONDO);
         contenido.add(crearPanelSalas(), "salas");
+        contenido.add(crearPanelEstudiantes(), "estudiantes");
         contenido.add(crearPanelRegistrar(), "registrar");
         contenido.add(crearPanelVerReservas(), "reservas");
         contenido.add(crearPanelCancelar(), "cancelar");
@@ -85,6 +88,7 @@ public class VentanaPrincipal extends JFrame {
 
         String[][] items = {
                 {"Salas", "salas"},
+                {"Estudiantes", "estudiantes"},
                 {"Nueva reserva", "registrar"},
                 {"Reservas", "reservas"},
                 {"Cancelar reserva", "cancelar"},
@@ -251,6 +255,84 @@ public class VentanaPrincipal extends JFrame {
         panel.add(l, c);
         c.gridy = 1;
         panel.add(campo, c);
+    }
+    
+    // ------------------------------------------------------------ Estudiantes
+
+    private JPanel crearPanelEstudiantes() {
+        String[] columnas = {"Carne / DPI", "Nombre", "Correo"};
+        DefaultTableModel modelo = new DefaultTableModel(columnas, 0) {
+            @Override
+            public boolean isCellEditable(int r, int c) {
+                return false;
+            }
+        };
+        Runnable cargar = () -> {
+            modelo.setRowCount(0);
+            for (Estudiante e : gestorEstudiantes.listarEstudiantes()) {
+                modelo.addRow(new Object[]{e.getCarne(), e.getNombre(), e.getCorreo()});
+            }
+        };
+        cargar.run();
+
+        JTable tabla = new JTable(modelo);
+        Tema.estilizarTabla(tabla);
+        int[] anchos = {160, 300, 300};
+        for (int i = 0; i < anchos.length; i++) {
+            tabla.getColumnModel().getColumn(i).setPreferredWidth(anchos[i]);
+        }
+
+        JTextField txtCarne = new JTextField(18);
+        Tema.estilizarCampo(txtCarne);
+        JTextField txtNombre = new JTextField(18);
+        Tema.estilizarCampo(txtNombre);
+        JTextField txtCorreo = new JTextField(18);
+        Tema.estilizarCampo(txtCorreo);
+        JLabel lblResultado = new JLabel(" ");
+        lblResultado.setFont(Tema.FUENTE_NEGRITA);
+
+        JButton btnRegistrar = Tema.botonPrimario("Registrar estudiante");
+        btnRegistrar.addActionListener(e -> {
+            String error = gestorEstudiantes.registrarEstudiante(
+                    new Estudiante(txtCarne.getText(), txtNombre.getText(), txtCorreo.getText()));
+            if (error == null) {
+                mostrarExito(lblResultado, "Estudiante registrado con exito.");
+                txtCarne.setText("");
+                txtNombre.setText("");
+                txtCorreo.setText("");
+                cargar.run();
+            } else {
+                mostrarError(lblResultado, error);
+            }
+        });
+
+        JPanel form = Tema.tarjeta(new GridBagLayout());
+        GridBagConstraints c = new GridBagConstraints();
+        c.insets = new Insets(8, 6, 8, 6);
+        c.anchor = GridBagConstraints.WEST;
+        c.fill = GridBagConstraints.HORIZONTAL;
+        agregarFila(form, c, 0, "DPI o carne", txtCarne);
+        agregarFila(form, c, 1, "Nombre completo", txtNombre);
+        agregarFila(form, c, 2, "Correo", txtCorreo);
+
+        c.gridx = 1; c.gridy = 3; c.weightx = 1; c.fill = GridBagConstraints.NONE;
+        form.add(btnRegistrar, c);
+        // ancho minimo para que un mensaje largo no cambie el tamano de los campos
+        lblResultado.setPreferredSize(new Dimension(10, 24));
+        c.gridy = 4; c.fill = GridBagConstraints.HORIZONTAL;
+        form.add(lblResultado, c);
+
+        JPanel listado = new JPanel(new BorderLayout(0, 12));
+        listado.setOpaque(false);
+        listado.add(crearBarraFiltro("Buscar por carne:", tabla, modelo, 0), BorderLayout.NORTH);
+        listado.add(Tema.scroll(tabla), BorderLayout.CENTER);
+
+        JPanel cuerpo = new JPanel(new BorderLayout(0, 16));
+        cuerpo.setOpaque(false);
+        cuerpo.add(form, BorderLayout.NORTH);
+        cuerpo.add(listado, BorderLayout.CENTER);
+
+        return pagina("Estudiantes", "Registra a los estudiantes y consulta el listado.", cuerpo);
     }
 
     // ------------------------------------------------------- Nueva reserva
@@ -421,10 +503,7 @@ public class VentanaPrincipal extends JFrame {
             public void changedUpdate(DocumentEvent e) { filtrar(); }
         });
 
-        JPanel barra = new JPanel(new BorderLayout(12, 0));
-        barra.setOpaque(false);
-        barra.add(Tema.etiqueta("Filtrar por DPI o carne:"), BorderLayout.WEST);
-        barra.add(txtFiltro, BorderLayout.CENTER);
+         JPanel barra = crearBarraFiltro("Filtrar por DPI o carne:", tabla, modeloReservas, 1);
 
         JPanel cuerpo = new JPanel(new BorderLayout(0, 14));
         cuerpo.setOpaque(false);
@@ -435,6 +514,36 @@ public class VentanaPrincipal extends JFrame {
     }
 
     // -------------------------------------------------------------- Cancelar
+    
+        /** Barra con un campo de texto que filtra las filas de la tabla por una columna. */
+        private JPanel crearBarraFiltro(String etiqueta, JTable tabla, DefaultTableModel modelo, int columna) {
+            TableRowSorter<DefaultTableModel> orden = new TableRowSorter<>(modelo);
+            tabla.setRowSorter(orden);
+            JTextField txtFiltro = new JTextField(20);
+            Tema.estilizarCampo(txtFiltro);
+            txtFiltro.getDocument().addDocumentListener(new DocumentListener() {
+                private void filtrar() {
+                    String t = txtFiltro.getText().trim();
+                    orden.setRowFilter(t.isEmpty() ? null
+                            : RowFilter.regexFilter("(?i)" + Pattern.quote(t), columna));
+            }
+
+            @Override
+            public void insertUpdate(DocumentEvent e) { filtrar(); }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) { filtrar(); }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) { filtrar(); }
+        });
+
+        JPanel barra = new JPanel(new BorderLayout(12, 0));
+        barra.setOpaque(false);
+        barra.add(Tema.etiqueta(etiqueta), BorderLayout.WEST);
+        barra.add(txtFiltro, BorderLayout.CENTER);
+        return barra;
+    }
 
     private JPanel crearPanelCancelar() {
         JList<Reserva> lista = crearListaReservas(listaCancelar);
