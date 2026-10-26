@@ -59,6 +59,10 @@ public class Reserva {
     public long calcularDuracionMinutos() {
         return Duration.between(horaInicio, horaFin).toMinutes();
     }
+    
+    public boolean ocupaSala() {
+        return estado.equalsIgnoreCase("Confirmada") || estado.equalsIgnoreCase("Asistio");
+    }
 
     public boolean seTraslapaCon(LocalTime otraInicio, LocalTime otraFin) {
         return horaInicio.isBefore(otraFin) && horaFin.isAfter(otraInicio);

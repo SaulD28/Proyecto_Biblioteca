@@ -5,6 +5,7 @@ import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
 import java.awt.*;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -20,9 +21,24 @@ public class VentanaPrincipal extends JFrame {
 
     private final GestorSalas gestorSalas;
     private final GestorReservas gestorReservas;
-   private final GestorEstudiantes gestorEstudiantes;
+    private final GestorEstudiantes gestorEstudiantes;
 
     private DefaultTableModel modeloReservas;
+    private DefaultTableModel modeloEstudiantes;
+    private final DefaultListModel<Reserva> listaInasistencias = new DefaultListModel<>();
+    private final DefaultListModel<Reserva> listaCheckIn = new DefaultListModel<>();
+
+    // Historial de un estudiante
+    private final DefaultComboBoxModel<Estudiante> modeloComboHistorial = new DefaultComboBoxModel<>();
+    private final JComboBox<Estudiante> comboHistorial = new JComboBox<>(modeloComboHistorial);
+    private final JLabel lblResumenHistorial = new JLabel(" ");
+    private final DefaultTableModel modeloHistorial = new DefaultTableModel(
+            new String[]{"Sala", "Fecha", "Inicio", "Fin", "Duracion (min)", "Estado"}, 0) {
+        @Override
+        public boolean isCellEditable(int r, int c) {
+            return false;
+        }
+    };
     private final DefaultListModel<Reserva> listaCancelar = new DefaultListModel<>();
     private final DefaultListModel<Reserva> listaDuracion = new DefaultListModel<>();
 
@@ -49,15 +65,24 @@ public class VentanaPrincipal extends JFrame {
         contenido.setBackground(Tema.FONDO);
         contenido.add(crearPanelSalas(), "salas");
         contenido.add(crearPanelEstudiantes(), "estudiantes");
+        contenido.add(crearPanelHistorial(), "historial");
         contenido.add(crearPanelRegistrar(), "registrar");
         contenido.add(crearPanelVerReservas(), "reservas");
         contenido.add(crearPanelCancelar(), "cancelar");
+        contenido.add(crearPanelInasistencias(), "inasistencias");
         contenido.add(crearPanelDuracion(), "duracion");
+        contenido.add(crearPanelCheckIn(), "checkin");
         raiz.add(contenido, BorderLayout.CENTER);
 
         setContentPane(raiz);
         refrescarReservas();
         mostrar("salas", 0);
+        
+         new javax.swing.Timer(30000, e -> {
+            if (!gestorReservas.liberarVencidas(LocalDateTime.now()).isEmpty()) {
+                refrescarReservas();
+            }
+        }).start();
     }
 
     // ------------------------------------------------------------ Navegacion
@@ -89,10 +114,14 @@ public class VentanaPrincipal extends JFrame {
         String[][] items = {
                 {"Salas", "salas"},
                 {"Estudiantes", "estudiantes"},
+                {"Historial", "historial"},
                 {"Nueva reserva", "registrar"},
                 {"Reservas", "reservas"},
                 {"Cancelar reserva", "cancelar"},
+                {"Check-in", "checkin"},
+                {"Inasistencias", "inasistencias"},
                 {"Duracion de reserva", "duracion"}
+                
         };
         for (int i = 0; i < items.length; i++) {
             final int indice = i;
@@ -178,7 +207,6 @@ public class VentanaPrincipal extends JFrame {
         JLabel lblSala = new JLabel();
         lblSala.setFont(Tema.SUBTITULO);
         lblSala.setForeground(Tema.PRIMARIO);
-
         JSpinner spFecha = crearSpinnerFecha();
         JSpinner spInicio = crearSpinnerHora(9, 0);
         JSpinner spFin = crearSpinnerHora(10, 0);
@@ -256,28 +284,23 @@ public class VentanaPrincipal extends JFrame {
         c.gridy = 1;
         panel.add(campo, c);
     }
-    
+
     // ------------------------------------------------------------ Estudiantes
 
     private JPanel crearPanelEstudiantes() {
-        String[] columnas = {"Carne / DPI", "Nombre", "Correo"};
-        DefaultTableModel modelo = new DefaultTableModel(columnas, 0) {
+        String[] columnas = {"Carne / DPI", "Nombre", "Correo", "Inasistencias"};
+        modeloEstudiantes = new DefaultTableModel(columnas, 0) {
             @Override
             public boolean isCellEditable(int r, int c) {
                 return false;
             }
         };
-        Runnable cargar = () -> {
-            modelo.setRowCount(0);
-            for (Estudiante e : gestorEstudiantes.listarEstudiantes()) {
-                modelo.addRow(new Object[]{e.getCarne(), e.getNombre(), e.getCorreo()});
-            }
-        };
-        cargar.run();
+        DefaultTableModel modelo = modeloEstudiantes;
+        refrescarEstudiantes();
 
         JTable tabla = new JTable(modelo);
         Tema.estilizarTabla(tabla);
-        int[] anchos = {160, 300, 300};
+        int[] anchos = {150, 250, 260, 110};
         for (int i = 0; i < anchos.length; i++) {
             tabla.getColumnModel().getColumn(i).setPreferredWidth(anchos[i]);
         }
@@ -300,7 +323,7 @@ public class VentanaPrincipal extends JFrame {
                 txtCarne.setText("");
                 txtNombre.setText("");
                 txtCorreo.setText("");
-                cargar.run();
+                refrescarEstudiantes();
             } else {
                 mostrarError(lblResultado, error);
             }
@@ -333,6 +356,184 @@ public class VentanaPrincipal extends JFrame {
         cuerpo.add(listado, BorderLayout.CENTER);
 
         return pagina("Estudiantes", "Registra a los estudiantes y consulta el listado.", cuerpo);
+    }
+
+    // -------------------------------------------------------------- Historial
+
+    private JPanel crearPanelHistorial() {
+        comboHistorial.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> l, Object v, int i, boolean sel, boolean foco) {
+                super.getListCellRendererComponent(l, v, i, sel, foco);
+                if (v instanceof Estudiante) {
+                    Estudiante e = (Estudiante) v;
+                    setText(e.getNombre() + "  -  " + e.getCarne());
+                }
+                setBorder(Tema.margen(5, 10, 5, 10));
+                return this;
+            }
+        });
+        Tema.estilizarCombo(comboHistorial);
+        comboHistorial.addActionListener(e -> mostrarHistorial());
+
+        lblResumenHistorial.setFont(Tema.FUENTE_NEGRITA);
+        lblResumenHistorial.setForeground(Tema.PRIMARIO);
+
+        JPanel seleccion = Tema.tarjeta(new BorderLayout(0, 12));
+        JPanel fila = new JPanel(new BorderLayout(12, 0));
+        fila.setOpaque(false);
+        fila.add(Tema.etiqueta("Estudiante:"), BorderLayout.WEST);
+        fila.add(comboHistorial, BorderLayout.CENTER);
+        seleccion.add(fila, BorderLayout.NORTH);
+        seleccion.add(lblResumenHistorial, BorderLayout.CENTER);
+
+        JTable tabla = new JTable(modeloHistorial);
+        Tema.estilizarTabla(tabla);
+
+        JPanel cuerpo = new JPanel(new BorderLayout(0, 16));
+        cuerpo.setOpaque(false);
+        cuerpo.add(seleccion, BorderLayout.NORTH);
+        cuerpo.add(Tema.scroll(tabla), BorderLayout.CENTER);
+
+        return pagina("Historial", "Elige a un estudiante para ver todas sus reservas.", cuerpo);
+    }
+
+    /** Recarga la lista de estudiantes del historial conservando la seleccion. */
+    private void refrescarHistorial() {
+        Estudiante seleccionado = (Estudiante) comboHistorial.getSelectedItem();
+        String carneSeleccionado = seleccionado == null ? null : seleccionado.getCarne();
+        Estudiante volver = null;
+        modeloComboHistorial.removeAllElements();
+        for (Estudiante e : gestorEstudiantes.listarEstudiantes()) {
+            modeloComboHistorial.addElement(e);
+            if (e.getCarne().equals(carneSeleccionado)) {
+                volver = e;
+            }
+        }
+        if (volver != null) {
+            modeloComboHistorial.setSelectedItem(volver);
+        }
+        mostrarHistorial();
+    }
+
+    private void mostrarHistorial() {
+        modeloHistorial.setRowCount(0);
+        Estudiante e = (Estudiante) comboHistorial.getSelectedItem();
+        if (e == null) {
+            lblResumenHistorial.setText("No hay estudiantes registrados.");
+            return;
+        }
+        int confirmadas = 0;
+        int asistidas = 0;
+        int liberadas = 0;
+        int canceladas = 0;
+        int inasistencias = 0;
+        List<Reserva> reservas = gestorReservas.reservasDe(e.getCarne());
+        for (Reserva r : reservas) {
+            modeloHistorial.addRow(new Object[]{
+                    r.getNumeroSala(), r.getFecha().format(FMT_FECHA), r.getHoraInicio().format(FMT_HORA),
+                    r.getHoraFin().format(FMT_HORA), r.calcularDuracionMinutos(), r.getEstado()
+            });
+            if (r.getEstado().equalsIgnoreCase("Confirmada")) {
+                confirmadas++;
+            } else if (r.getEstado().equalsIgnoreCase("Asistio")) {
+                asistidas++;
+            } else if (r.getEstado().equalsIgnoreCase("Liberada")) {
+                liberadas++;
+            } else if (r.getEstado().equalsIgnoreCase("Cancelada")) {
+                canceladas++;
+            } else if (r.getEstado().equalsIgnoreCase("Inasistencia")) {
+                inasistencias++;
+            }
+        }
+        
+        
+        
+        
+        StringBuilder resumen = new StringBuilder( plural(reservas.size(), "reserva", "reservas"));
+        
+        agregarSiHay(resumen, confirmadas, "confirmada", "confirmadas");
+        agregarSiHay(resumen, asistidas, "con check-in", "con check-in");
+        agregarSiHay(resumen, liberadas, "liberada", "liberadas");
+        agregarSiHay(resumen, canceladas, "cancelada", "canceladas");
+        resumen.append("  -  inasistencias: ").append(inasistencias)
+                .append(" de ").append(GestorEstudiantes.LIMITE_INASISTENCIAS);
+        lblResumenHistorial.setText(resumen.toString());
+    }
+    
+     private JPanel crearPanelCheckIn() {
+        JList<Reserva> lista = crearListaReservas(listaCheckIn);
+        JLabel lblResultado = new JLabel(" ");
+        lblResultado.setFont(Tema.FUENTE_NEGRITA);
+
+        JButton btnCheckIn = Tema.botonPrimario("Registrar check-in");
+        btnCheckIn.addActionListener(e -> {
+            Reserva r = lista.getSelectedValue();
+            if (r == null) {
+                mostrarError(lblResultado, "Selecciona una reserva de la lista.");
+                return;
+            }
+            String error = gestorReservas.registrarCheckIn(r.getIdReserva(), LocalDateTime.now());
+            if (error != null) {
+                mostrarError(lblResultado, error);
+                refrescarReservas();
+                return;
+            }
+            mostrarExito(lblResultado, "Check-in registrado: sala " + r.getNumeroSala() + ", "
+                    + r.getDpiCarnet() + ".");
+            refrescarReservas();
+        });
+
+        return pagina("Check-in", "Desde " + GestorReservas.MINUTOS_CHECKIN_ANTES + " min antes hasta "
+                        + GestorReservas.MINUTOS_TOLERANCIA + " min despues del inicio. Luego la sala se libera sola.",
+                crearCuerpoLista(lista, btnCheckIn, lblResultado));
+    }
+
+    // ---------------------------------------------------------- Inasistencias
+
+    private JPanel crearPanelInasistencias() {
+        JList<Reserva> lista = crearListaReservas(listaInasistencias);
+        JLabel lblResultado = new JLabel(" ");
+        lblResultado.setFont(Tema.FUENTE_NEGRITA);
+
+        JButton btnRegistrar = Tema.botonPeligro("Registrar inasistencia");
+        btnRegistrar.addActionListener(e -> {
+            Reserva r = lista.getSelectedValue();
+            if (r == null) {
+                mostrarError(lblResultado, "Selecciona una reserva de la lista.");
+                return;
+            }
+            Estudiante estudiante = gestorEstudiantes.buscarPorCarne(r.getDpiCarnet());
+            if (estudiante == null) {
+                mostrarError(lblResultado, "El DPI o carne " + r.getDpiCarnet()
+                        + " no esta registrado. Registralo en Estudiantes.");
+                return;
+            }
+            int op = JOptionPane.showConfirmDialog(this,
+                    estudiante.getNombre() + " no asistio a la sala " + r.getNumeroSala() + " del "
+                            + r.getFecha().format(FMT_FECHA) + " (" + r.getHoraInicio().format(FMT_HORA)
+                            + " a " + r.getHoraFin().format(FMT_HORA) + ").\nRegistrar la inasistencia?",
+                    "Confirmar inasistencia", JOptionPane.YES_NO_OPTION);
+            if (op != JOptionPane.YES_OPTION) {
+                return;
+            }
+            String error = gestorReservas.registrarInasistencia(r.getIdReserva(), LocalDateTime.now());
+            if (error != null) {
+                mostrarError(lblResultado, error);
+                return;
+            }
+            int total = gestorEstudiantes.registrarInasistencia(estudiante.getCarne());
+            String mensaje = "Inasistencia registrada: " + estudiante.getNombre() + " (" + total + " de "
+                    + GestorEstudiantes.LIMITE_INASISTENCIAS + ").";
+            if (total >= GestorEstudiantes.LIMITE_INASISTENCIAS) {
+                mostrarError(lblResultado, mensaje + " Queda sin reservas.");
+            } else {
+                mostrarExito(lblResultado, mensaje);
+            }
+            refrescarReservas();
+        });
+
+        return pagina("Inasistencias", "Reservas sin check-in (en curso o liberadas). Marca las que no se usaron.",                crearCuerpoLista(lista, btnRegistrar, lblResultado));
     }
 
     // ------------------------------------------------------- Nueva reserva
@@ -397,6 +598,11 @@ public class VentanaPrincipal extends JFrame {
             }
             if (!dpi.matches("[A-Za-z0-9]{6,13}")) {
                 mostrarError(lblResultado, "El DPI o carne debe tener de 6 a 13 caracteres (solo letras y numeros).");
+                return;
+            }
+            String restriccion = gestorEstudiantes.motivoRestriccion(dpi);
+            if (restriccion != null) {
+                mostrarError(lblResultado, restriccion);
                 return;
             }
             if (!cantTexto.matches("\\d+")) {
@@ -481,29 +687,7 @@ public class VentanaPrincipal extends JFrame {
             tabla.getColumnModel().getColumn(i).setPreferredWidth(anchos[i]);
         }
 
-        // Filtro por DPI o carne (columna 1)
-        TableRowSorter<DefaultTableModel> orden = new TableRowSorter<>(modeloReservas);
-        tabla.setRowSorter(orden);
-        JTextField txtFiltro = new JTextField(20);
-        Tema.estilizarCampo(txtFiltro);
-        txtFiltro.getDocument().addDocumentListener(new DocumentListener() {
-            private void filtrar() {
-                String t = txtFiltro.getText().trim();
-                orden.setRowFilter(t.isEmpty() ? null
-                        : RowFilter.regexFilter("(?i)" + Pattern.quote(t), 1));
-            }
-
-            @Override
-            public void insertUpdate(DocumentEvent e) { filtrar(); }
-
-            @Override
-            public void removeUpdate(DocumentEvent e) { filtrar(); }
-
-            @Override
-            public void changedUpdate(DocumentEvent e) { filtrar(); }
-        });
-
-         JPanel barra = crearBarraFiltro("Filtrar por DPI o carne:", tabla, modeloReservas, 1);
+        JPanel barra = crearBarraFiltro("Filtrar por DPI o carne:", tabla, modeloReservas, 1);
 
         JPanel cuerpo = new JPanel(new BorderLayout(0, 14));
         cuerpo.setOpaque(false);
@@ -513,19 +697,17 @@ public class VentanaPrincipal extends JFrame {
         return pagina("Reservas", "Todas las reservas registradas, confirmadas y canceladas.", cuerpo);
     }
 
-    // -------------------------------------------------------------- Cancelar
-    
-        /** Barra con un campo de texto que filtra las filas de la tabla por una columna. */
-        private JPanel crearBarraFiltro(String etiqueta, JTable tabla, DefaultTableModel modelo, int columna) {
-            TableRowSorter<DefaultTableModel> orden = new TableRowSorter<>(modelo);
-            tabla.setRowSorter(orden);
-            JTextField txtFiltro = new JTextField(20);
-            Tema.estilizarCampo(txtFiltro);
-            txtFiltro.getDocument().addDocumentListener(new DocumentListener() {
-                private void filtrar() {
-                    String t = txtFiltro.getText().trim();
-                    orden.setRowFilter(t.isEmpty() ? null
-                            : RowFilter.regexFilter("(?i)" + Pattern.quote(t), columna));
+    /** Barra con un campo de texto que filtra las filas de la tabla por una columna. */
+    private JPanel crearBarraFiltro(String etiqueta, JTable tabla, DefaultTableModel modelo, int columna) {
+        TableRowSorter<DefaultTableModel> orden = new TableRowSorter<>(modelo);
+        tabla.setRowSorter(orden);
+        JTextField txtFiltro = new JTextField(20);
+        Tema.estilizarCampo(txtFiltro);
+        txtFiltro.getDocument().addDocumentListener(new DocumentListener() {
+            private void filtrar() {
+                String t = txtFiltro.getText().trim();
+                orden.setRowFilter(t.isEmpty() ? null
+                        : RowFilter.regexFilter("(?i)" + Pattern.quote(t), columna));
             }
 
             @Override
@@ -544,6 +726,8 @@ public class VentanaPrincipal extends JFrame {
         barra.add(txtFiltro, BorderLayout.CENTER);
         return barra;
     }
+
+    // -------------------------------------------------------------- Cancelar
 
     private JPanel crearPanelCancelar() {
         JList<Reserva> lista = crearListaReservas(listaCancelar);
@@ -652,7 +836,9 @@ public class VentanaPrincipal extends JFrame {
 
     // ------------------------------------------------------------- Utilidades
 
-    private void refrescarReservas() {
+        private void refrescarReservas() {
+        LocalDateTime ahora = LocalDateTime.now();
+        gestorReservas.liberarVencidas(ahora);
         if (modeloReservas != null) {
             modeloReservas.setRowCount(0);
             for (Reserva r : gestorReservas.getReservas()) {
@@ -665,11 +851,31 @@ public class VentanaPrincipal extends JFrame {
         }
         listaCancelar.clear();
         listaDuracion.clear();
+        listaInasistencias.clear();
+        listaCheckIn.clear();
         for (Reserva r : gestorReservas.getReservas()) {
             if (r.getEstado().equalsIgnoreCase("Confirmada")) {
                 listaCancelar.addElement(r);
+                listaCheckIn.addElement(r);
+                if (gestorReservas.yaComenzo(r, ahora)) {
+                    listaInasistencias.addElement(r);
+                }
+            } else if (r.getEstado().equalsIgnoreCase("Liberada")) {
+                listaInasistencias.addElement(r);
             }
             listaDuracion.addElement(r);
+        }
+        refrescarEstudiantes();
+        refrescarHistorial();
+    }
+
+    private void refrescarEstudiantes() {
+        if (modeloEstudiantes == null) {
+            return;
+        }
+        modeloEstudiantes.setRowCount(0);
+        for (Estudiante e : gestorEstudiantes.listarEstudiantes()) {
+            modeloEstudiantes.addRow(new Object[]{e.getCarne(), e.getNombre(), e.getCorreo(), e.getInasistencias()});
         }
     }
 
@@ -711,6 +917,15 @@ public class VentanaPrincipal extends JFrame {
         c.fill = (campo instanceof JSpinner) ? GridBagConstraints.NONE : GridBagConstraints.HORIZONTAL;
         panel.add(campo, c);
         c.fill = GridBagConstraints.HORIZONTAL;
+    }
+    
+    private void agregarSiHay(StringBuilder texto, int cantidad, String singular, String plural) {
+        if (cantidad > 0) {
+            texto.append("  -  ").append(plural(cantidad, singular, plural));
+        }
+    }
+    private String plural(int cantidad, String singular, String plural) {
+        return cantidad + " " + (cantidad == 1 ? singular : plural);
     }
 
     private void mostrarExito(JLabel lbl, String texto) {

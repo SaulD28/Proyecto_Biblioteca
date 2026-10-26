@@ -54,9 +54,9 @@ public class GestorSalas {
         for (Reserva r : reservasExistentes) {
             boolean mismaSala = r.getNumeroSala() == numeroSala;
             boolean mismaFecha = r.getFecha().equals(fecha);
-            boolean estaConfirmada = r.getEstado().equalsIgnoreCase("Confirmada");
+            boolean ocupaSala = r.ocupaSala();
 
-            if (mismaSala && mismaFecha && estaConfirmada) {
+            if (mismaSala && mismaFecha && ocupaSala) {
                 if (r.seTraslapaCon(horaInicio, horaFin)) {
                     return false;
                 }

@@ -25,6 +25,7 @@ public final class Tema {
     public static final Color BORDE = new Color(0xE2E6EE);
     public static final Color SELECCION = new Color(0xD7F0EC);
     public static final Color EXITO = new Color(0x047857);
+    public static final Color AVISO = new Color(0xB45309);
 
     public static final Font FUENTE = new Font("SansSerif", Font.PLAIN, 14);
     public static final Font FUENTE_NEGRITA = FUENTE.deriveFont(Font.BOLD);
@@ -197,10 +198,13 @@ public final class Tema {
                 }
                 setForeground(TEXTO);
                 String texto = v == null ? "" : v.toString();
-                if (texto.equals("Confirmada") || texto.equals("Disponible")) {
+                 if (texto.equals("Confirmada") || texto.equals("Disponible") || texto.equals("Asistio")) {
                     setForeground(EXITO);
                     setFont(FUENTE_NEGRITA);
-                } else if (texto.equals("Cancelada") || texto.equals("Ocupada")) {
+                } else if (texto.equals("Liberada")) {
+                    setForeground(AVISO);
+                    setFont(FUENTE_NEGRITA);
+                } else if (texto.equals("Cancelada") || texto.equals("Ocupada") || texto.equals("Inasistencia")) {
                     setForeground(PELIGRO);
                     setFont(FUENTE_NEGRITA);
                 } else {

@@ -1,5 +1,6 @@
 import java.io.*;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -7,6 +8,12 @@ import java.util.List;
 public class GestorReservas {
 
     public static final int HORAS_MAXIMAS_POR_RESERVA = 3; 
+
+    /** El check-in se abre estos minutos antes de la hora de inicio. */
+    public static final int MINUTOS_CHECKIN_ANTES = 15;
+
+    /** Pasados estos minutos del inicio sin check-in, la sala se libera sola. */
+    public static final int MINUTOS_TOLERANCIA = 15;
 
     private List<Reserva> reservas;
     private String rutaArchivo;
@@ -25,9 +32,9 @@ public class GestorReservas {
         for (Reserva r : reservas) {
             boolean mismaSala = r.getNumeroSala() == numeroSala;
             boolean mismaFecha = r.getFecha().equals(fecha);
-            boolean estaConfirmada = r.getEstado().equalsIgnoreCase("Confirmada");
+            boolean ocupaSala = r.ocupaSala();
 
-            if (mismaSala && mismaFecha && estaConfirmada && r.seTraslapaCon(horaInicio, horaFin)) {
+            if (mismaSala && mismaFecha && ocupaSala && r.seTraslapaCon(horaInicio, horaFin)) {
                 System.out.println("Cruce de horario detectado con la reserva " + r.getIdReserva());
                 return true;
             }
@@ -40,9 +47,9 @@ public class GestorReservas {
         for (Reserva r : reservas) {
             boolean mismoUsuario = r.getDpiCarnet().equals(dpiCarnet);
             boolean mismaFecha = r.getFecha().equals(fecha);
-            boolean estaConfirmada = r.getEstado().equalsIgnoreCase("Confirmada");
+            boolean ocupaSala = r.ocupaSala();
 
-            if (mismoUsuario && mismaFecha && estaConfirmada && r.seTraslapaCon(horaInicio, horaFin)) {
+            if (mismoUsuario && mismaFecha && ocupaSala && r.seTraslapaCon(horaInicio, horaFin)) {
                 System.out.println("El usuario " + dpiCarnet + " ya tiene la reserva "
                         + r.getIdReserva() + " en ese horario.");
                 return true;
@@ -103,6 +110,86 @@ public class GestorReservas {
         }
         System.out.println("No se encontro la reserva " + idReserva + " o ya estaba cancelada.");
         return false;
+    }
+
+    /**
+     * Requisito funcional: Consultar historial de reservas de un estudiante.
+     * Devuelve todas sus reservas (confirmadas, canceladas y con inasistencia).
+     */
+    public List<Reserva> reservasDe(String dpiCarnet) {
+        List<Reserva> resultado = new ArrayList<>();
+        for (Reserva r : reservas) {
+            if (r.getDpiCarnet().equalsIgnoreCase(dpiCarnet)) {
+                resultado.add(r);
+            }
+        }
+        return resultado;
+    }
+
+    /** Indica si la reserva ya empezo en el momento recibido. */
+    public boolean yaComenzo(Reserva r, LocalDateTime ahora) {
+        return !LocalDateTime.of(r.getFecha(), r.getHoraInicio()).isAfter(ahora);
+    }
+
+
+    public String registrarInasistencia(String idReserva, LocalDateTime ahora) {
+        for (Reserva r : reservas) {
+            if (r.getIdReserva().equals(idReserva)) {
+                boolean liberada = r.getEstado().equalsIgnoreCase("Liberada");
+                if (!liberada && !r.getEstado().equalsIgnoreCase("Confirmada")) {
+                    return "Solo se puede registrar inasistencia en reservas sin check-in (confirmadas o liberadas).";
+                }
+                if (!yaComenzo(r, ahora)) {
+                    return "La reserva aun no ha comenzado.";
+                }
+                r.setEstado("Inasistencia");
+                guardarEnArchivo();
+                System.out.println("Inasistencia registrada en la reserva " + idReserva);
+                return null;
+            }
+        }
+        return "No se encontro la reserva " + idReserva + ".";
+    }
+
+
+    public String registrarCheckIn(String idReserva, LocalDateTime ahora) {
+        for (Reserva r : reservas) {
+            if (r.getIdReserva().equals(idReserva)) {
+                if (!r.getEstado().equalsIgnoreCase("Confirmada")) {
+                    return "Solo se puede hacer check-in en reservas confirmadas.";
+                }
+                LocalDateTime inicio = LocalDateTime.of(r.getFecha(), r.getHoraInicio());
+                if (ahora.isBefore(inicio.minusMinutes(MINUTOS_CHECKIN_ANTES))) {
+                    return "Aun es pronto: el check-in abre " + MINUTOS_CHECKIN_ANTES
+                            + " minutos antes de las " + r.getHoraInicio() + ".";
+                }
+                if (ahora.isAfter(inicio.plusMinutes(MINUTOS_TOLERANCIA))) {
+                    return "Ya paso la tolerancia de " + MINUTOS_TOLERANCIA + " minutos: la sala se libera.";
+                }
+                r.setEstado("Asistio");
+                guardarEnArchivo();
+                System.out.println("Check-in registrado en la reserva " + idReserva);
+                return null;
+            }
+        }
+        return "No se encontro la reserva " + idReserva + ".";
+    }
+
+
+    public List<Reserva> liberarVencidas(LocalDateTime ahora) {
+        List<Reserva> liberadas = new ArrayList<>();
+        for (Reserva r : reservas) {
+            LocalDateTime limite = LocalDateTime.of(r.getFecha(), r.getHoraInicio()).plusMinutes(MINUTOS_TOLERANCIA);
+            if (r.getEstado().equalsIgnoreCase("Confirmada") && ahora.isAfter(limite)) {
+                r.setEstado("Liberada");
+                liberadas.add(r);
+            }
+        }
+        if (!liberadas.isEmpty()) {
+            guardarEnArchivo();
+            System.out.println("Salas liberadas automaticamente: " + liberadas.size());
+        }
+        return liberadas;
     }
 
     private void cargarDesdeArchivo() {
