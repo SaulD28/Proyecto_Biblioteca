@@ -22,6 +22,7 @@ public class VentanaPrincipal extends JFrame {
     private final GestorSalas gestorSalas;
     private final GestorReservas gestorReservas;
     private final GestorEstudiantes gestorEstudiantes;
+    private final GestorNotificaciones gestorNotificaciones;
 
     private DefaultTableModel modeloReservas;
     private DefaultTableModel modeloEstudiantes;
@@ -73,6 +74,7 @@ public class VentanaPrincipal extends JFrame {
         gestorSalas = new GestorSalas("data/salas.txt");
         gestorReservas = new GestorReservas("data/reservas.txt");
         gestorEstudiantes = new GestorEstudiantes("data/estudiantes.txt");
+        gestorNotificaciones = new GestorNotificaciones("data/notificaciones.txt");
 
         setTitle("PointNow - Reserva de Working Points");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -789,6 +791,11 @@ public class VentanaPrincipal extends JFrame {
                 txtDpi.setText("");
                 txtCantidad.setText("");
                 refrescarReservas();
+                Estudiante destinatario = gestorEstudiantes.buscarPorCarne(dpi);
+                String enviadoA = gestorNotificaciones.enviarConfirmacion(nueva, destinatario);
+                JOptionPane.showMessageDialog(this,
+                        gestorNotificaciones.armarMensaje(nueva, destinatario) + "\n\nNotificacion enviada a: " + enviadoA,
+                        "Reserva confirmada", JOptionPane.INFORMATION_MESSAGE);
             } else {
                 mostrarError(lblResultado, "No se pudo registrar. Revisa el horario (cruce o maximo de horas).");
             }

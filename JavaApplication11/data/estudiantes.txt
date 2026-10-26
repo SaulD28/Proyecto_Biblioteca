@@ -1,3 +1,4 @@
-1234567890101,Ana Lopez,ana.lopez@correo.com
-9876543210101,Carlos Perez,carlos.perez@correo.com
-3870799470101,Edison Donis,edonis@unis.edu.gt
+1234567890101,Ana Lopez,ana.lopez@correo.com,0
+9876543210101,Carlos Perez,carlos.perez@correo.com,0
+3870799470101,Edison Donis,edonis@unis.edu.gt,0
+20190903,David Cardona,dacardona@unis.edu.gt,1
