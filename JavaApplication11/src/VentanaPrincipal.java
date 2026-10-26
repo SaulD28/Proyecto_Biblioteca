@@ -265,6 +265,10 @@ public class VentanaPrincipal extends JFrame {
             LocalDate fecha = leerFecha(spFecha);
             LocalTime inicio = leerHora(spInicio);
             LocalTime fin = leerHora(spFin);
+            if (LocalDateTime.of(fecha, inicio).isBefore(LocalDateTime.now())) {
+                mostrarError(lblResultado, "No puedes reservar en una fecha u hora que ya paso.");
+                return;
+            }
             if (!fin.isAfter(inicio)) {
                 mostrarError(lblResultado, "La hora de fin debe ser posterior a la de inicio.");
                 return;
