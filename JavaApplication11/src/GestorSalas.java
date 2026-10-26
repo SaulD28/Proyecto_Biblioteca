@@ -1,11 +1,15 @@
 import java.io.*;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 
 public class GestorSalas {
-
+    
+    public static final int HORA_APERTURA = 8;
+    public static final int HORA_CIERRE = 20;
     private List<Sala> salas;
     private String rutaArchivo;
 
@@ -78,6 +82,74 @@ public class GestorSalas {
         }
         System.out.println("No se encontro la reserva " + idReserva);
         return -1;
+    }
+    /** Disponibilidad en tiempo real: reserva que tiene la sala ocupada ahora, o null si esta libre. */
+    public Reserva reservaEnCurso(int numeroSala, List<Reserva> reservas, LocalDateTime ahora) {
+        LocalTime hora = ahora.toLocalTime();
+        for (Reserva r : reservas) {
+            if (r.getNumeroSala() == numeroSala && r.ocupaSala() && r.getFecha().equals(ahora.toLocalDate())
+                    && !hora.isBefore(r.getHoraInicio()) && hora.isBefore(r.getHoraFin())) {
+                return r;
+            }
+        }
+        return null;
+    }
+
+    /** La siguiente reserva de hoy que empieza despues de este momento, o null si no hay. */
+    public Reserva proximaReserva(int numeroSala, List<Reserva> reservas, LocalDateTime ahora) {
+        LocalTime hora = ahora.toLocalTime();
+        Reserva proxima = null;
+        for (Reserva r : reservas) {
+            if (r.getNumeroSala() == numeroSala && r.ocupaSala() && r.getFecha().equals(ahora.toLocalDate())
+                    && r.getHoraInicio().isAfter(hora)
+                    && (proxima == null || r.getHoraInicio().isBefore(proxima.getHoraInicio()))) {
+                proxima = r;
+            }
+        }
+        return proxima;
+    }
+
+    /**
+     * Reporte de ocupacion por sala (una fila por sala, entre dos fechas inclusive):
+     * {numero, ubicacion, reservas, con check-in, liberadas, inasistencias, canceladas,
+     *  tiempo reservado, % de ocupacion}.
+     */
+    public List<Object[]> reporteOcupacion(List<Reserva> reservas, LocalDate desde, LocalDate hasta) {
+        List<Object[]> filas = new ArrayList<>();
+        long dias = ChronoUnit.DAYS.between(desde, hasta) + 1;
+        double minutosDisponibles = Math.max(dias, 1) * (HORA_CIERRE - HORA_APERTURA) * 60.0;
+
+        for (Sala s : salas) {
+            int total = 0, asistieron = 0, liberadas = 0, inasistencias = 0, canceladas = 0;
+            long minutos = 0;
+            for (Reserva r : reservas) {
+                if (r.getNumeroSala() != s.getNumero() || r.getFecha().isBefore(desde)
+                        || r.getFecha().isAfter(hasta)) {
+                    continue;
+                }
+                total++;
+                String estado = r.getEstado();
+                if (estado.equalsIgnoreCase("Asistio")) {
+                    asistieron++;
+                } else if (estado.equalsIgnoreCase("Liberada")) {
+                    liberadas++;
+                } else if (estado.equalsIgnoreCase("Inasistencia")) {
+                    inasistencias++;
+                } else if (estado.equalsIgnoreCase("Cancelada")) {
+                    canceladas++;
+                }
+                if (r.ocupaSala()) {
+                    minutos += r.calcularDuracionMinutos();
+                }
+            }
+            double porcentaje = Math.min(100.0, minutos * 100.0 / minutosDisponibles);
+            filas.add(new Object[]{
+                    s.getNumero(), s.getUbicacion(), total, asistieron, liberadas, inasistencias, canceladas,
+                    (minutos / 60) + " h " + (minutos % 60) + " min",
+                    String.format("%.1f%%", porcentaje)
+            });
+        }
+        return filas;
     }
 
     private void cargarDesdeArchivo() {

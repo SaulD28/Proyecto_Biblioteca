@@ -39,6 +39,28 @@ public class VentanaPrincipal extends JFrame {
             return false;
         }
     };
+    // Disponibilidad en tiempo real
+    private final DefaultTableModel modeloAhora = new DefaultTableModel(
+            new String[]{"Sala", "Ubicacion", "Estado", "Detalle"}, 0) {
+        @Override
+        public boolean isCellEditable(int r, int c) {
+            return false;
+        }
+    };
+    private final JLabel lblActualizado = new JLabel(" ");
+
+    // Reporte de ocupacion por sala
+    private final DefaultTableModel modeloOcupacion = new DefaultTableModel(
+            new String[]{"Sala", "Ubicacion", "Reservas", "Check-in", "Liberadas", "Inasist.",
+                    "Cancel.", "Tiempo", "% Ocupacion"}, 0) {
+        @Override
+        public boolean isCellEditable(int r, int c) {
+            return false;
+        }
+    };
+    private JSpinner spOcDesde;
+    private JSpinner spOcHasta;
+    private final JLabel lblResumenOcupacion = new JLabel(" ");
     private final DefaultListModel<Reserva> listaCancelar = new DefaultListModel<>();
     private final DefaultListModel<Reserva> listaDuracion = new DefaultListModel<>();
 
@@ -73,14 +95,18 @@ public class VentanaPrincipal extends JFrame {
         contenido.add(crearPanelDuracion(), "duracion");
         contenido.add(crearPanelCheckIn(), "checkin");
         raiz.add(contenido, BorderLayout.CENTER);
+        
 
-        setContentPane(raiz);
+       setContentPane(raiz);
         refrescarReservas();
         mostrar("salas", 0);
-        
-         new javax.swing.Timer(30000, e -> {
+
+        // Cada 30 segundos libera las reservas vencidas y actualiza la disponibilidad
+        new javax.swing.Timer(30000, e -> {
             if (!gestorReservas.liberarVencidas(LocalDateTime.now()).isEmpty()) {
                 refrescarReservas();
+            } else {
+                refrescarAhora();
             }
         }).start();
     }
@@ -284,7 +310,136 @@ public class VentanaPrincipal extends JFrame {
         c.gridy = 1;
         panel.add(campo, c);
     }
+// ------------------------------------------------- Disponibilidad ahora
 
+    private JPanel crearPanelAhora() {
+        JTable tabla = new JTable(modeloAhora);
+        Tema.estilizarTabla(tabla);
+        int[] anchos = {70, 220, 130, 380};
+        for (int i = 0; i < anchos.length; i++) {
+            tabla.getColumnModel().getColumn(i).setPreferredWidth(anchos[i]);
+        }
+        lblActualizado.setFont(Tema.FUENTE_PEQUENA);
+        lblActualizado.setForeground(Tema.TEXTO_SUAVE);
+
+        JButton btnActualizar = Tema.botonPrimario("Actualizar ahora");
+        btnActualizar.addActionListener(e -> refrescarReservas());
+
+        JPanel barra = new JPanel(new BorderLayout(16, 0));
+        barra.setOpaque(false);
+        barra.add(btnActualizar, BorderLayout.WEST);
+        barra.add(lblActualizado, BorderLayout.CENTER);
+
+        JPanel cuerpo = new JPanel(new BorderLayout(0, 14));
+        cuerpo.setOpaque(false);
+        cuerpo.add(barra, BorderLayout.NORTH);
+        cuerpo.add(Tema.scroll(tabla), BorderLayout.CENTER);
+
+        return pagina("Disponibilidad ahora", "Estado de cada sala en este momento. Se actualiza solo cada 30 segundos.", cuerpo);
+    }
+
+    /** Recalcula el estado de cada sala con la fecha y hora actuales. */
+    private void refrescarAhora() {
+        LocalDateTime ahora = LocalDateTime.now();
+        modeloAhora.setRowCount(0);
+        for (Sala s : gestorSalas.listarSalas()) {
+            Reserva enCurso = gestorSalas.reservaEnCurso(s.getNumero(), gestorReservas.getReservas(), ahora);
+            Reserva proxima = gestorSalas.proximaReserva(s.getNumero(), gestorReservas.getReservas(), ahora);
+            String estado;
+            String detalle;
+            if (enCurso != null) {
+                estado = "Ocupada";
+                detalle = "Hasta las " + enCurso.getHoraFin().format(FMT_HORA) + " (" + enCurso.getDpiCarnet()
+                        + (enCurso.getEstado().equalsIgnoreCase("Asistio") ? ", con check-in)" : ", sin check-in)");
+            } else {
+                estado = "Disponible";
+                detalle = proxima == null ? "Sin mas reservas hoy"
+                        : "Libre hasta las " + proxima.getHoraInicio().format(FMT_HORA);
+            }
+            modeloAhora.addRow(new Object[]{s.getNumero(), s.getUbicacion(), estado, detalle});
+        }
+        lblActualizado.setText("Actualizado: " + ahora.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")));
+    }
+
+    // ----------------------------------------------- Reporte de ocupacion
+
+    private JPanel crearPanelOcupacion() {
+        // Por defecto abarca desde la primera hasta la ultima reserva registrada
+        LocalDate desde = LocalDate.now();
+        LocalDate hasta = LocalDate.now();
+        boolean primera = true;
+        for (Reserva r : gestorReservas.getReservas()) {
+            if (primera || r.getFecha().isBefore(desde)) {
+                desde = r.getFecha();
+            }
+            if (primera || r.getFecha().isAfter(hasta)) {
+                hasta = r.getFecha();
+            }
+            primera = false;
+        }
+        spOcDesde = crearSpinnerFecha();
+        spOcDesde.setValue(aDate(desde));
+        spOcHasta = crearSpinnerFecha();
+        spOcHasta.setValue(aDate(hasta));
+
+        JTable tabla = new JTable(modeloOcupacion);
+        Tema.estilizarTabla(tabla);
+        int[] anchos = {62, 105, 85, 95, 90, 80, 75, 115, 110};
+        for (int i = 0; i < anchos.length; i++) {
+            tabla.getColumnModel().getColumn(i).setPreferredWidth(anchos[i]);
+        }
+        lblResumenOcupacion.setFont(Tema.FUENTE_NEGRITA);
+
+        JButton btnGenerar = Tema.botonPrimario("Generar reporte");
+        btnGenerar.addActionListener(e -> refrescarOcupacion());
+
+        JPanel filtros = new JPanel(new GridBagLayout());
+        filtros.setOpaque(false);
+        GridBagConstraints c = new GridBagConstraints();
+        c.insets = new Insets(0, 0, 0, 14);
+        c.anchor = GridBagConstraints.SOUTHWEST;
+        agregarCampoVertical(filtros, c, 0, "Desde", spOcDesde);
+        agregarCampoVertical(filtros, c, 1, "Hasta", spOcHasta);
+        c.gridx = 2; c.gridy = 1;
+        filtros.add(btnGenerar, c);
+        c.gridx = 3; c.weightx = 1; c.fill = GridBagConstraints.HORIZONTAL;
+        filtros.add(lblResumenOcupacion, c);
+
+        JPanel tarjetaFiltros = Tema.tarjeta(new BorderLayout());
+        tarjetaFiltros.add(filtros, BorderLayout.CENTER);
+
+        JPanel cuerpo = new JPanel(new BorderLayout(0, 16));
+        cuerpo.setOpaque(false);
+        cuerpo.add(tarjetaFiltros, BorderLayout.NORTH);
+        cuerpo.add(Tema.scroll(tabla), BorderLayout.CENTER);
+
+        return pagina("Reporte de ocupacion", "Uso de cada sala en un rango de fechas. Horario de atencion: "
+                + GestorSalas.HORA_APERTURA + ":00 a " + GestorSalas.HORA_CIERRE + ":00.", cuerpo);
+    }
+
+    private void refrescarOcupacion() {
+        if (spOcDesde == null) {
+            return;
+        }
+        LocalDate desde = leerFecha(spOcDesde);
+        LocalDate hasta = leerFecha(spOcHasta);
+        modeloOcupacion.setRowCount(0);
+        if (hasta.isBefore(desde)) {
+            mostrarError(lblResumenOcupacion, "La fecha final debe ser igual o posterior a la inicial.");
+            return;
+        }
+        int totalReservas = 0;
+        for (Object[] fila : gestorSalas.reporteOcupacion(gestorReservas.getReservas(), desde, hasta)) {
+            modeloOcupacion.addRow(fila);
+            totalReservas += (int) fila[2];
+        }
+        lblResumenOcupacion.setForeground(Tema.PRIMARIO);
+        lblResumenOcupacion.setText(plural(totalReservas, "reserva", "reservas") + " en el rango.");
+    }
+
+    private Date aDate(LocalDate fecha) {
+        return Date.from(fecha.atStartOfDay(ZoneId.systemDefault()).toInstant());
+    }
     // ------------------------------------------------------------ Estudiantes
 
     private JPanel crearPanelEstudiantes() {
@@ -400,6 +555,8 @@ public class VentanaPrincipal extends JFrame {
 
     /** Recarga la lista de estudiantes del historial conservando la seleccion. */
     private void refrescarHistorial() {
+        refrescarAhora();
+        refrescarOcupacion();
         Estudiante seleccionado = (Estudiante) comboHistorial.getSelectedItem();
         String carneSeleccionado = seleccionado == null ? null : seleccionado.getCarne();
         Estudiante volver = null;
